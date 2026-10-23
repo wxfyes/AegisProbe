@@ -51,6 +51,8 @@ func (h *RouterHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/admin/node/reorder", h.adminRequireAuth(h.handleAdminNodeReorder))
 	mux.HandleFunc("/api/admin/agent_install_cmd", h.adminRequireAuth(h.handleAdminInstallCmd))
 	mux.HandleFunc("/api/admin/test_tg", h.adminRequireAuth(h.handleAdminTestTG))
+	mux.HandleFunc("/api/admin/backup/export", h.adminRequireAuth(h.handleAdminBackupExport))
+	mux.HandleFunc("/api/admin/backup/import", h.adminRequireAuth(h.handleAdminBackupImport))
 
 	// 一键安装脚本直接托管
 	mux.HandleFunc("/install.sh", h.handleInstallScript)
@@ -597,4 +599,58 @@ echo "🛡️ 数据正在单向安全汇报至: ${SERVER_URL} (内存占用 < 4
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(script))
+}
+
+// handleAdminBackupExport 导出当前探针主控完整配置与受控服务器备份
+func (h *RouterHandler) handleAdminBackupExport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	cfg := h.cfgMgr.GetConfig()
+	filename := fmt.Sprintf("aegis_backup_%s.json", time.Now().Format("20060102_150405"))
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+	w.WriteHeader(http.StatusOK)
+
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(cfg)
+}
+
+// handleAdminBackupImport 导入备份文件并一键满血恢复
+func (h *RouterHandler) handleAdminBackupImport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1024*1024*5)) // 最大 5MB
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "读取备份文件失败"})
+		return
+	}
+	defer r.Body.Close()
+
+	var importedCfg common.ServerConfig
+	if err := json.Unmarshal(body, &importedCfg); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "备份文件格式不合法，必须为有效 JSON 结构"})
+		return
+	}
+
+	if err := h.cfgMgr.ImportBackup(importedCfg); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "恢复配置失败: " + err.Error()})
+		return
+	}
+
+	// 重新同步 TG 告警中枢设置
+	h.notifier.UpdateConfig(importedCfg.TGEnabled, importedCfg.TGBotToken, importedCfg.TGChatID, importedCfg.TGProxy)
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"ok":         true,
+		"node_count": len(importedCfg.Nodes),
+		"site_title": importedCfg.SiteTitle,
+	})
 }

@@ -275,6 +275,32 @@ func (m *Manager) ReorderNodes(nodeIDs []string) error {
 	return m.saveLocked()
 }
 
+// ImportBackup 导入外部备份，完全恢复系统配置与节点列表
+func (m *Manager) ImportBackup(newCfg common.ServerConfig) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// 保护机制：如果导入的备份中密码为空，保留当前管理员密码
+	if newCfg.AdminPassword == "" {
+		newCfg.AdminPassword = m.cfg.AdminPassword
+	}
+	if newCfg.ListenPort <= 0 {
+		newCfg.ListenPort = m.cfg.ListenPort
+	}
+	if newCfg.SiteTitle == "" {
+		newCfg.SiteTitle = "天阙·神盾安全探针"
+	}
+	if newCfg.OfflineSec <= 0 {
+		newCfg.OfflineSec = 60
+	}
+	if len(newCfg.WarnDays) == 0 {
+		newCfg.WarnDays = []int{7, 3, 1, 0}
+	}
+
+	m.cfg = newCfg
+	return m.saveLocked()
+}
+
 func generateRandomSecret(length int) string {
 	bytes := make([]byte, length)
 	if _, err := rand.Read(bytes); err != nil {

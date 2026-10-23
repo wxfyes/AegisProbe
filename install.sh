@@ -461,6 +461,49 @@ uninstall_all() {
     fi
 }
 
+# 备份服务端配置数据 (导出当前目录)
+backup_config() {
+    local srv_dir="${INSTALL_DIR}/server"
+    local cfg_file="${srv_dir}/data/config.json"
+    if [ ! -f "$cfg_file" ]; then
+        echo -e "${RED}❌ 未检测到服务端配置文件: ${cfg_file}${PLAIN}"
+        return 1
+    fi
+    local backup_name="aegis_backup_$(date +%Y%m%d_%H%M%S).json"
+    cp -f "$cfg_file" "./${backup_name}"
+    echo -e "${GREEN}=================================================================${PLAIN}"
+    echo -e "${GREEN}✅ 主控配置与全部节点数据已成功备份！${PLAIN}"
+    echo -e "${CYAN}备份文件存放路径: $(pwd)/${backup_name}${PLAIN}"
+    echo -e "${PLAIN}请妥善保存此文件，换机时直接导入即可瞬间复活所有探针连接！${PLAIN}"
+    echo -e "${GREEN}=================================================================${PLAIN}"
+}
+
+# 恢复服务端配置数据 (从指定 json 文件恢复)
+restore_config() {
+    local target_file="$1"
+    if [ -z "$target_file" ]; then
+        read -rp "请输入备份文件完整路径 (例如 /root/aegis_backup.json): " target_file
+    fi
+    if [ ! -f "$target_file" ]; then
+        echo -e "${RED}❌ 备份文件不存在: ${target_file}${PLAIN}"
+        return 1
+    fi
+
+    local srv_dir="${INSTALL_DIR}/server"
+    mkdir -p "${srv_dir}/data"
+    cp -f "$target_file" "${srv_dir}/data/config.json"
+    echo -e "${GREEN}✓ 备份文件已写入 ${srv_dir}/data/config.json${PLAIN}"
+
+    # 重启服务端加载新配置
+    detect_init_sys
+    if [ "$INIT_SYS" = "systemd" ]; then
+        systemctl restart aegis-server 2>/dev/null || true
+    elif [ "$INIT_SYS" = "openrc" ]; then
+        rc-service aegis-server restart 2>/dev/null || true
+    fi
+    echo -e "${GREEN}✅ 配置与全部节点已满血恢复并重启生效！${PLAIN}"
+}
+
 # ==================== 命令行非交互式入口 ====================
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -491,6 +534,14 @@ while [[ $# -gt 0 ]]; do
             install_agent "$server" "$id" "$token"
             exit 0
             ;;
+        --backup)
+            backup_config
+            exit 0
+            ;;
+        --restore=*)
+            restore_config "${1#*=}"
+            exit 0
+            ;;
         *)
             shift
             ;;
@@ -511,11 +562,15 @@ show_menu() {
     echo -e " ${GREEN}3.${PLAIN} 查看服务端状态与管理员密码"
     echo -e " ${GREEN}4.${PLAIN} 重启服务端 (aegis-server)"
     echo -e " ${GREEN}5.${PLAIN} 重启受控端 (aegis-agent)"
-    echo -e " ${RED}6.${PLAIN} 彻底卸载天阙·神盾探针"
+    echo -e "-----------------------------------------------------------------"
+    echo -e " ${GREEN}6.${PLAIN} 备份主控配置数据 (导出全部节点与设置到当前目录)"
+    echo -e " ${GREEN}7.${PLAIN} 恢复主控配置数据 (从指定 json 备份文件一键恢复)"
+    echo -e "-----------------------------------------------------------------"
+    echo -e " ${RED}8.${PLAIN} 彻底卸载天阙·神盾探针"
     echo -e "-----------------------------------------------------------------"
     echo -e " ${BLUE}0.${PLAIN} 退出脚本"
     echo -e "${CYAN}=================================================================${PLAIN}"
-    read -rp "请输入选项编号 [0-6]: " num
+    read -rp "请输入选项编号 [0-8]: " num
 
     case "$num" in
         1) install_master ;;
@@ -537,7 +592,9 @@ show_menu() {
             fi
             echo -e "${GREEN}受控端已重启${PLAIN}"
             ;;
-        6) uninstall_all ;;
+        6) backup_config ;;
+        7) restore_config ;;
+        8) uninstall_all ;;
         0) exit 0 ;;
         *) echo -e "${RED}输入错误，请输入有效数字！${PLAIN}" ;;
     esac

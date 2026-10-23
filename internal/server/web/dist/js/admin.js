@@ -27,6 +27,9 @@
     btnCopyCmd: document.getElementById('btnCopyCmd'),
     settingsForm: document.getElementById('settingsForm'),
     btnTestTG: document.getElementById('btnTestTG'),
+    btnExportBackup: document.getElementById('btnExportBackup'),
+    btnImportBackup: document.getElementById('btnImportBackup'),
+    backupFileInput: document.getElementById('backupFileInput'),
 
     // 表单元素
     cfgSiteTitle: document.getElementById('cfgSiteTitle'),
@@ -350,6 +353,63 @@
       dom.btnTestTG.textContent = originalText;
     }
   });
+
+  // 8.1 导出完整配置备份 (.json)
+  if (dom.btnExportBackup) {
+    dom.btnExportBackup.addEventListener('click', () => {
+      window.location.href = '/api/admin/backup/export';
+    });
+  }
+
+  // 8.2 导入备份一键灾备恢复
+  if (dom.btnImportBackup && dom.backupFileInput) {
+    dom.btnImportBackup.addEventListener('click', () => {
+      dom.backupFileInput.value = '';
+      dom.backupFileInput.click();
+    });
+
+    dom.backupFileInput.addEventListener('change', async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+
+      try {
+        const text = await file.text();
+        let parsed;
+        try {
+          parsed = JSON.parse(text);
+        } catch (err) {
+          alert('❌ 备份文件解析失败，不是合法的 JSON 格式！');
+          return;
+        }
+
+        const nodeCount = (parsed.nodes && Array.isArray(parsed.nodes)) ? parsed.nodes.length : 0;
+        const title = parsed.site_title || '未命名配置';
+        const ok = confirm(`⚠️ 灾难恢复确认：\n\n该备份包含「${nodeCount}」台受控服务器节点。\n站点标题: 「${title}」\n\n导入后将直接替换并恢复当前主控的配置和全部机器！\n受控节点凭证一致，无需重新配置即可自动上线。\n\n确定立即导入恢复吗？`);
+        if (!ok) return;
+
+        const origText = dom.btnImportBackup.textContent;
+        dom.btnImportBackup.textContent = '⏳ 正在极速恢复中...';
+        dom.btnImportBackup.disabled = true;
+
+        const res = await fetch('/api/admin/backup/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: text
+        });
+        const data = await res.json();
+        if (res.ok && data.ok) {
+          showToast(`✅ 满血恢复成功！已导入 ${data.node_count} 台服务器`, 'success');
+          loadAdminConfig();
+        } else {
+          alert('❌ 恢复失败: ' + (data.error || '未知错误'));
+        }
+        dom.btnImportBackup.textContent = origText;
+        dom.btnImportBackup.disabled = false;
+      } catch (err) {
+        alert('❌ 读取或导入备份失败: ' + (err.message || err));
+      }
+    });
+  }
 
   // 9. 添加/编辑节点
   dom.btnAddNode.addEventListener('click', () => {
