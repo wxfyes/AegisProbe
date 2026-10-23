@@ -3,7 +3,7 @@
 # 🛡️ 天阙·神盾安全探针 (AegisProbe) 一键管理与安装脚本
 # GitHub: https://github.com/wxfyes/AegisProbe
 # 【全平台支持】：普通Linux (Debian/Ubuntu/CentOS)、软路由 (OpenWrt/iStoreOS/PVE/Alpine)
-# 【特性】：零依赖、Musl/Glibc全自洽、自动识别systemd/procd、nobody安全沙箱
+# 【特性】：精准单架构下载、绝不下载多余二进制、端口冲突检测、nobody安全沙箱
 # ==============================================================================
 
 set -e
@@ -12,6 +12,7 @@ REPO="wxfyes/AegisProbe"
 INSTALL_DIR="/opt/aegis-probe"
 SYSTEMD_DIR="/etc/systemd/system"
 OPENWRT_INIT_DIR="/etc/init.d"
+LISTEN_PORT=8989
 
 # 颜色定义
 RED='\033[0;31m'
@@ -29,7 +30,7 @@ check_root() {
     fi
 }
 
-# 架构检测
+# 架构精准检测 (只匹配并下载当前机器所需架构)
 detect_arch() {
     ARCH=$(uname -m)
     case "$ARCH" in
@@ -60,6 +61,24 @@ detect_init_sys() {
     fi
 }
 
+# 检查端口是否被占用
+check_port() {
+    local port="$1"
+    local pid=""
+    if command -v lsof >/dev/null 2>&1; then
+        pid=$(lsof -ti :"$port" 2>/dev/null || true)
+    elif command -v ss >/dev/null 2>&1; then
+        pid=$(ss -tlnp "sport = :$port" 2>/dev/null | grep -o 'pid=[0-9]*' | cut -d= -f2 || true)
+    elif command -v netstat >/dev/null 2>&1; then
+        pid=$(netstat -tlnp 2>/dev/null | grep ":$port " | awk '{print $7}' | cut -d/ -f1 || true)
+    fi
+
+    if [ -n "$pid" ]; then
+        echo -e "${YELLOW}⚠️ 警告: 端口 ${port} 目前已被进程 (PID: ${pid}) 占用！${PLAIN}"
+        echo -e "${YELLOW}请先排查占用程序，或使用 --port=其他端口 参数安装。${PLAIN}"
+    fi
+}
+
 # 智能高速下载函数 (带 GitHub 镜像加速 fallback)
 download_file() {
     local filename="$1"
@@ -67,7 +86,7 @@ download_file() {
     local url="https://github.com/${REPO}/releases/latest/download/${filename}"
     local mirror_url="https://mirror.ghproxy.com/https://github.com/${REPO}/releases/latest/download/${filename}"
 
-    echo -e "${CYAN}📥 正在下载 ${filename} ...${PLAIN}"
+    echo -e "${CYAN}📥 正在精准下载 ${filename} (当前架构: ${GOARCH}) ...${PLAIN}"
     if curl -fL --connect-timeout 6 -m 30 "$url" -o "$output" 2>/dev/null; then
         echo -e "${GREEN}✓ 从 GitHub 直连下载成功${PLAIN}"
     else
@@ -85,7 +104,7 @@ download_file() {
 # 获取本机公网 IP (用于提示)
 get_public_ip() {
     local ip=""
-    ip=$(curl -s -m 3 https://api.ipify.org || curl -s -m 3 https://ipv4.icanhazip.com || echo "你的路由器/服务器IP")
+    ip=$(curl -s -m 3 https://api.ipify.org || curl -s -m 3 https://ipv4.icanhazip.com || echo "你的服务器IP")
     echo "$ip"
 }
 
@@ -95,14 +114,19 @@ install_master() {
     detect_arch
     detect_init_sys
 
+    if [ "$GOARCH" != "amd64" ]; then
+        echo -e "${YELLOW}⚠️ 当前机器架构为 ${GOARCH}，服务端官方二进制建议在 Linux amd64 运行。${PLAIN}"
+    fi
+
+    check_port "$LISTEN_PORT"
+
     local bin_name="aegis_server_linux_amd64"
     local srv_dir="${INSTALL_DIR}/server"
     mkdir -p "${srv_dir}/data"
-    mkdir -p "${srv_dir}/downloads"
 
     echo -e "${BLUE}=================================================================${PLAIN}"
     echo -e "${BLUE}🛡️ 开始安装 天阙·神盾 探针服务端 (Master)...${PLAIN}"
-    echo -e "${BLUE}检测到运行环境: ${INIT_SYS} (架构: ${GOARCH})${PLAIN}"
+    echo -e "${BLUE}运行环境: ${INIT_SYS} | 机器架构: ${GOARCH} | 监听端口: ${LISTEN_PORT}${PLAIN}"
     echo -e "${BLUE}=================================================================${PLAIN}"
 
     # 停止旧服务
@@ -112,12 +136,8 @@ install_master() {
         ${OPENWRT_INIT_DIR}/aegis-server stop 2>/dev/null || true
     fi
 
+    # 仅下载当前架构的服务端二进制，绝不下载任何其他架构或多余文件
     download_file "$bin_name" "${srv_dir}/aegis_server"
-
-    # 同时下载受控端到 downloads 供客户端一键拉取
-    echo -e "${CYAN}📦 正在预载受控端安装包至本地服务目录...${PLAIN}"
-    download_file "aegis_agent_linux_amd64" "${srv_dir}/downloads/aegis_agent_linux_amd64" || true
-    download_file "aegis_agent_linux_arm64" "${srv_dir}/downloads/aegis_agent_linux_arm64" || true
 
     # 根据系统类型配置自启服务
     if [ "$INIT_SYS" = "systemd" ]; then
@@ -129,7 +149,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=${srv_dir}
-ExecStart=${srv_dir}/aegis_server -port=8989 -bin-dir=${srv_dir}/downloads
+ExecStart=${srv_dir}/aegis_server -port=${LISTEN_PORT}
 Restart=always
 RestartSec=3
 LimitNOFILE=65535
@@ -140,6 +160,13 @@ EOF
         systemctl daemon-reload
         systemctl enable aegis-server
         systemctl restart aegis-server
+
+        sleep 2
+        if ! systemctl is-active --quiet aegis-server; then
+            echo -e "${RED}❌ 服务端启动失败！正在输出最近日志排查原因：${PLAIN}"
+            journalctl -u aegis-server -n 15 --no-pager
+            exit 1
+        fi
 
     elif [ "$INIT_SYS" = "openwrt" ]; then
         cat <<EOF > "${OPENWRT_INIT_DIR}/aegis-server"
@@ -152,7 +179,7 @@ PROG=${srv_dir}/aegis_server
 
 start_service() {
     procd_open_instance
-    procd_set_param command "\$PROG" -port=8989 -bin-dir=${srv_dir}/downloads
+    procd_set_param command "\$PROG" -port=${LISTEN_PORT}
     procd_set_param respawn 3600 5 0
     procd_set_param stdout 1
     procd_set_param stderr 1
@@ -163,11 +190,8 @@ EOF
         ${OPENWRT_INIT_DIR}/aegis-server enable
         ${OPENWRT_INIT_DIR}/aegis-server restart
     else
-        nohup ${srv_dir}/aegis_server -port=8989 -bin-dir=${srv_dir}/downloads >/dev/null 2>&1 &
+        nohup ${srv_dir}/aegis_server -port=${LISTEN_PORT} >/dev/null 2>&1 &
     fi
-
-    # 等待生成初始密码
-    sleep 2
 
     local server_ip
     server_ip=$(get_public_ip)
@@ -182,11 +206,11 @@ EOF
 
     echo -e "${GREEN}=================================================================${PLAIN}"
     echo -e "${GREEN}✅ 天阙·神盾安全探针服务端 已成功安装并运行！${PLAIN}"
-    echo -e "${CYAN}👉 监控大屏地址  : ${PLAIN}http://${server_ip}:8989"
-    echo -e "${CYAN}👉 管理控制台地址: ${PLAIN}http://${server_ip}:8989/admin.html"
+    echo -e "${CYAN}👉 监控大屏地址  : ${PLAIN}http://${server_ip}:${LISTEN_PORT}"
+    echo -e "${CYAN}👉 管理控制台地址: ${PLAIN}http://${server_ip}:${LISTEN_PORT}/admin.html"
     echo -e "${YELLOW}👉 初始管理员密码: ${PLAIN}${admin_pwd}"
     echo -e "${PLAIN}=================================================================${PLAIN}"
-    echo -e "${PLAIN}提示: 请在软路由或防火墙中开放 8989 TCP 端口。可在后台随时修改密码与访问模式。${PLAIN}"
+    echo -e "${PLAIN}提示: 请在防火墙/安全组开放 ${LISTEN_PORT} TCP 端口。进入后台可随时修改密码。${PLAIN}"
 }
 
 # ==================== 2. 安装受控端 (Agent) ====================
@@ -202,7 +226,7 @@ install_agent() {
     if [ -z "$server_url" ] || [ -z "$node_id" ] || [ -z "$node_token" ]; then
         echo -e "${BLUE}请输入受控端连接参数 (在主控后台 [一键命令] 中可直接复制完整指令):${PLAIN}"
         read -rp "主控端地址 (例如 http://1.2.3.4:8989): " server_url
-        read -rp "节点唯一标识 (例如 router-01): " node_id
+        read -rp "节点唯一标识 (例如 hk-01): " node_id
         read -rp "节点认证 Token (例如 secret_token): " node_token
     fi
 
@@ -211,14 +235,15 @@ install_agent() {
         exit 1
     fi
 
+    # 仅下载当前机器匹配的单一架构 Agent，绝不多下一个文件
     local bin_name="aegis_agent_linux_${GOARCH}"
     local agent_dir="${INSTALL_DIR}/agent"
     mkdir -p "$agent_dir"
 
     echo -e "${BLUE}=================================================================${PLAIN}"
     echo -e "${BLUE}🛡️ 开始部署 天阙·神盾 受控端 (Agent)...${PLAIN}"
-    echo -e "${BLUE}检测到运行环境: ${INIT_SYS} (硬件架构: ${GOARCH})${PLAIN}"
-    echo -e "${BLUE}【安全铁律生效】：纯单向推送、零入站端口、不影响软路由 NAT 转发${PLAIN}"
+    echo -e "${BLUE}运行环境: ${INIT_SYS} | 机器架构: ${GOARCH} (精准下载 ${bin_name})${PLAIN}"
+    echo -e "${BLUE}【安全铁律生效】：纯单向推送、零入站端口、nobody 安全沙箱${PLAIN}"
     echo -e "${BLUE}=================================================================${PLAIN}"
 
     if [ "$INIT_SYS" = "systemd" ]; then
@@ -227,16 +252,11 @@ install_agent() {
         ${OPENWRT_INIT_DIR}/aegis-agent stop 2>/dev/null || true
     fi
 
-    # 优先从主控下载，若超时则从 GitHub Release 下载
-    local local_download_url="${server_url%/}/download/${bin_name}"
-    echo -e "${CYAN}📥 正在下载探针程序...${PLAIN}"
-    if ! curl -fsSL --connect-timeout 5 -m 30 "$local_download_url" -o "${agent_dir}/aegis_agent" 2>/dev/null; then
-        echo -e "${YELLOW}⚠️ 从主控直连下载失败，自动切换至 GitHub Release 镜像通道...${PLAIN}"
-        download_file "$bin_name" "${agent_dir}/aegis_agent"
-    fi
+    # 下载当前架构的 agent
+    download_file "$bin_name" "${agent_dir}/aegis_agent"
     chmod +x "${agent_dir}/aegis_agent"
 
-    # 配置开机自启
+    # 配置开机自启 (nobody 用户运行)
     if [ "$INIT_SYS" = "systemd" ]; then
         cat <<EOF > "${SYSTEMD_DIR}/aegis-agent.service"
 [Unit]
@@ -261,6 +281,13 @@ EOF
         systemctl daemon-reload
         systemctl enable aegis-agent
         systemctl restart aegis-agent
+
+        sleep 2
+        if ! systemctl is-active --quiet aegis-agent; then
+            echo -e "${RED}❌ 受控端启动失败！排查日志：${PLAIN}"
+            journalctl -u aegis-agent -n 15 --no-pager
+            exit 1
+        fi
 
     elif [ "$INIT_SYS" = "openwrt" ]; then
         cat <<EOF > "${OPENWRT_INIT_DIR}/aegis-agent"
@@ -315,7 +342,7 @@ view_server_status() {
 uninstall_all() {
     check_root
     detect_init_sys
-    echo -e "${YELLOW}确定要卸载天阙·神盾探针吗？(包含服务端和受控端) [y/N]: ${PLAIN}"
+    echo -e "${YELLOW}确定要彻底卸载天阙·神盾探针吗？[y/N]: ${PLAIN}"
     read -r confirm
     if [[ "$confirm" =~ ^[yY]$ ]]; then
         if [ "$INIT_SYS" = "systemd" ]; then
@@ -344,25 +371,40 @@ uninstall_all() {
 }
 
 # ==================== 命令行非交互式入口 ====================
-if [ "$1" = "--master" ]; then
-    install_master
-    exit 0
-elif [ "$1" = "--agent" ]; then
-    shift
-    server=""
-    id=""
-    token=""
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            --server=*) server="${1#*=}"; shift ;;
-            --id=*) id="${1#*=}"; shift ;;
-            --token=*) token="${1#*=}"; shift ;;
-            *) shift ;;
-        esac
-    done
-    install_agent "$server" "$id" "$token"
-    exit 0
-fi
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --master)
+            shift
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --port=*) LISTEN_PORT="${1#*=}"; shift ;;
+                    *) shift ;;
+                esac
+            done
+            install_master
+            exit 0
+            ;;
+        --agent)
+            shift
+            server=""
+            id=""
+            token=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --server=*) server="${1#*=}"; shift ;;
+                    --id=*) id="${1#*=}"; shift ;;
+                    --token=*) token="${1#*=}"; shift ;;
+                    *) shift ;;
+                esac
+            done
+            install_agent "$server" "$id" "$token"
+            exit 0
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
 
 # ==================== 交互式主菜单 ====================
 show_menu() {

@@ -23,7 +23,6 @@ import (
 func main() {
 	configPath := flag.String("config", filepath.Join("data", "config.json"), "配置文件存储路径")
 	portOverride := flag.Int("port", 0, "覆盖监听端口")
-	binDir := flag.String("bin-dir", ".", "供客户端下载的探针二进制目录")
 	version := flag.Bool("v", false, "查看版本号")
 	flag.Parse()
 
@@ -106,12 +105,8 @@ func main() {
 	routerHandler := handler.NewRouterHandler(cfgMgr, st, authMgr, notifier)
 	routerHandler.RegisterRoutes(mux)
 
-	// 挂载 Agent 客户端二进制下载路由
-	mux.Handle("/download/", http.StripPrefix("/download/", web.DownloadHandler(*binDir)))
-
-	// 挂载嵌入式单页面前端资源 (go:embed)
-	fileServer := http.FileServer(web.GetFileSystem())
-	mux.Handle("/", fileServer)
+	// 挂载嵌入式单页面前端资源 (彻底根除 404 问题)
+	web.RegisterStaticRoutes(mux)
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%d", listenPort),

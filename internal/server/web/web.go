@@ -2,48 +2,64 @@ package web
 
 import (
 	"embed"
-	"io/fs"
+	"mime"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 )
 
-//go:embed dist/*
+//go:embed dist
 var embeddedFiles embed.FS
 
-// GetFileSystem 返回前端静态资源的 http.FileSystem
-func GetFileSystem() http.FileSystem {
-	sub, err := fs.Sub(embeddedFiles, "dist")
-	if err != nil {
-		panic(err)
-	}
-	return http.FS(sub)
-}
+// RegisterStaticRoutes 精准且稳健地挂载所有嵌入式前端静态资源
+// 彻底解决 http.FileServer 在特定系统/代理下对根路径 "/" 返回 404 的问题
+func RegisterStaticRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		cleanPath := strings.TrimPrefix(r.URL.Path, "/")
+		if cleanPath == "" || cleanPath == "index.html" {
+			cleanPath = "index.html"
+		}
 
-// DownloadHandler 提供 /download/ 目录下载各架构 Agent 二进制
-func DownloadHandler(binDir string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		filename := filepath.Base(r.URL.Path)
-		if filename == "" || filename == "." || strings.Contains(filename, "..") {
+		fullPath := "dist/" + cleanPath
+		data, err := embeddedFiles.ReadFile(fullPath)
+		if err != nil {
+			// 若未匹配且不含扩展名，兜底到 index.html
+			if !strings.Contains(cleanPath, ".") {
+				data, err = embeddedFiles.ReadFile("dist/index.html")
+				cleanPath = "index.html"
+			}
+		}
+
+		if err != nil {
 			http.NotFound(w, r)
 			return
 		}
 
-		filePath := filepath.Join(binDir, filename)
-		if _, err := os.Stat(filePath); os.IsNotExist(err) {
-			// 若当前目录不存在，尝试在上级目录或当前可执行文件同级目录寻找
-			altPath := filepath.Join(".", filename)
-			if _, err2 := os.Stat(altPath); err2 == nil {
-				filePath = altPath
-			} else {
-				http.NotFound(w, r)
-				return
+		// 根据文件后缀精准识别 Content-Type
+		ext := filepath.Ext(cleanPath)
+		ctype := mime.TypeByExtension(ext)
+		if ctype == "" {
+			switch ext {
+			case ".html":
+				ctype = "text/html; charset=utf-8"
+			case ".css":
+				ctype = "text/css; charset=utf-8"
+			case ".js":
+				ctype = "application/javascript; charset=utf-8"
+			case ".json":
+				ctype = "application/json; charset=utf-8"
+			case ".svg":
+				ctype = "image/svg+xml"
+			case ".png":
+				ctype = "image/png"
+			default:
+				ctype = "text/plain; charset=utf-8"
 			}
 		}
 
-		w.Header().Set("Content-Disposition", "attachment; filename="+filename)
-		w.Header().Set("Content-Type", "application/octet-stream")
-		http.ServeFile(w, r, filePath)
-	}
+		w.Header().Set("Content-Type", ctype)
+		w.Header().Set("Cache-Control", "no-cache")
+		w.WriteHeader(http.StatusOK)
+		w.Write(data)
+	})
 }
