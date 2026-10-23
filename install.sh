@@ -129,11 +129,17 @@ install_master() {
     echo -e "${BLUE}运行环境: ${INIT_SYS} | 机器架构: ${GOARCH} | 监听端口: ${LISTEN_PORT}${PLAIN}"
     echo -e "${BLUE}=================================================================${PLAIN}"
 
-    # 停止旧服务
+    # 停止旧服务并清理可能残留的孤儿进程
     if [ "$INIT_SYS" = "systemd" ]; then
         systemctl stop aegis-server 2>/dev/null || true
     elif [ "$INIT_SYS" = "openwrt" ] && [ -f "${OPENWRT_INIT_DIR}/aegis-server" ]; then
         ${OPENWRT_INIT_DIR}/aegis-server stop 2>/dev/null || true
+    fi
+    killall -9 aegis_server 2>/dev/null || true
+
+    # 如果端口仍被占用，尝试强行释放该端口
+    if command -v fuser >/dev/null 2>&1; then
+        fuser -k "${LISTEN_PORT}/tcp" 2>/dev/null || true
     fi
 
     # 仅下载当前架构的服务端二进制，绝不下载任何其他架构或多余文件
