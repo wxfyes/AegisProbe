@@ -58,7 +58,8 @@ body {
 }
 
 .container {
-  max-width: 1480px;
+  max-width: 1720px;
+  width: 100%;
   margin: 0 auto;
 }
 
@@ -285,19 +286,40 @@ body {
   font-weight: 700;
 }
 
-/* 节点卡片网格 */
+/* 节点卡片网格 (紧凑现代布局，优先一行 5 卡片) */
 .node-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
-  gap: 18px;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 12px;
+}
+
+@media (min-width: 1260px) {
+  .node-grid {
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+  }
+}
+
+@media (min-width: 1020px) and (max-width: 1259px) {
+  .node-grid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1019px) {
+  .node-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+  }
 }
 
 /* 单节点卡片 (纯净高性能，无 GPU 负担) */
 .node-card {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
-  border-radius: 14px;
-  padding: 16px;
+  border-radius: 12px;
+  padding: 12px 14px;
   position: relative;
 }
 
@@ -349,13 +371,13 @@ body {
 }
 
 .node-name {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--text-main);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 170px;
+  max-width: 150px;
 }
 
 .node-os-badge {
@@ -376,15 +398,15 @@ body {
 .card-capsules {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: 6px;
+  margin-bottom: 10px;
 }
 
 .capsule {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
-  padding: 3px 9px;
-  border-radius: 12px;
+  padding: 2px 7px;
+  border-radius: 10px;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   display: inline-flex;
@@ -440,11 +462,11 @@ body {
 .card-hardware {
   display: flex;
   align-items: center;
-  gap: 12px;
-  font-size: 13px;
+  gap: 8px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--text-main);
-  margin-bottom: 14px;
+  margin-bottom: 10px;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
@@ -497,13 +519,13 @@ body {
 }
 
 .bar-val {
-  width: 44px;
+  width: 38px;
   text-align: right;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--text-main);
   font-weight: 700;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .bar-val.off {
@@ -514,15 +536,15 @@ body {
 .speed-pill-group {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: 6px;
+  margin-bottom: 10px;
 }
 
 .speed-pill {
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
-  border-radius: 8px;
-  padding: 6px 10px;
+  border-radius: 7px;
+  padding: 5px 8px;
   display: flex;
   flex-direction: column;
 }
@@ -536,24 +558,26 @@ body {
 }
 
 .speed-pill .pill-header {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 2px;
+  margin-bottom: 1px;
 }
 
 .speed-pill.up .pill-header { color: #10b981; }
 .speed-pill.down .pill-header { color: #0284c7; }
 
 .speed-pill .pill-value {
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 800;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--text-main);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 [data-theme="light"] .speed-pill {
@@ -594,11 +618,11 @@ body {
 
 .card-details {
   border-top: 1px dashed var(--card-border);
-  padding-top: 10px;
+  padding-top: 8px;
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  font-size: 12px;
+  gap: 4px;
+  font-size: 11px;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--text-sub);
