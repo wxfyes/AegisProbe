@@ -121,9 +121,9 @@
       // 智能去重准确统计地区数量（优先根据节点真实地区/名称智能提取）
       const regionSet = new Set();
       (data.nodes || []).forEach(n => {
-        const code = getRegionCode(n.name, n.region);
-        if (code && code !== 'UN') {
-          regionSet.add(code);
+        const c = detectCountry(n.flag || n.region, n.name);
+        if (c && c !== 'global') {
+          regionSet.add(c);
         }
       });
       dom.valRegionCount.textContent = regionSet.size > 0 ? regionSet.size : (s.region_count || 0);
@@ -368,23 +368,26 @@
     return formatBytes(b) + '/s';
   }
 
-  // 高清矢量 SVG 国旗渲染引擎 (彻底消灭 Windows 平台不支持 Emoji 导致的大地球和字符)
-  function getFlagSVG(code, name) {
+  // 智能地区代码提取函数
+  function detectCountry(code, name) {
     name = (name || '').toLowerCase();
     code = (code || '').trim().toLowerCase();
+    if (code === 'hk' || name.includes('香港') || name.includes('hk')) return 'hk';
+    if (code === 'tw' || name.includes('台湾') || name.includes('tw') || name.includes('hinet')) return 'tw';
+    if (code === 'jp' || name.includes('日本') || name.includes('东京') || name.includes('大阪') || name.includes('jp')) return 'jp';
+    if (code === 'sg' || name.includes('新加坡') || name.includes('狮城') || name.includes('sg')) return 'sg';
+    if (code === 'us' || name.includes('美国') || name.includes('美') || name.includes('us') || name.includes('洛杉矶')) return 'us';
+    if (code === 'cn' || name.includes('中国') || name.includes('国内') || name.includes('北京') || name.includes('上海') || name.includes('广州') || name.includes('深圳')) return 'cn';
+    if (code === 'de' || name.includes('德国') || name.includes('法兰克福') || name.includes('de')) return 'de';
+    if (code === 'gb' || code === 'uk' || name.includes('英国') || name.includes('伦敦') || name.includes('uk')) return 'gb';
+    if (code === 'kr' || name.includes('韩国') || name.includes('首尔') || name.includes('kr')) return 'kr';
+    if (code === 'fr' || name.includes('法国') || name.includes('巴黎')) return 'fr';
+    return (code && code !== 'global' && code !== 'un') ? code : 'global';
+  }
 
-    // 智能地区判定 (优先代码，其次根据节点名称精准识别)
-    let country = 'global';
-    if (code === 'hk' || name.includes('香港') || name.includes('hk')) country = 'hk';
-    else if (code === 'tw' || name.includes('台湾') || name.includes('tw') || name.includes('hinet')) country = 'tw';
-    else if (code === 'jp' || name.includes('日本') || name.includes('东京') || name.includes('大阪') || name.includes('jp')) country = 'jp';
-    else if (code === 'sg' || name.includes('新加坡') || name.includes('狮城') || name.includes('sg')) country = 'sg';
-    else if (code === 'us' || name.includes('美国') || name.includes('美') || name.includes('us') || name.includes('洛杉矶')) country = 'us';
-    else if (code === 'cn' || name.includes('中国') || name.includes('国内') || name.includes('北京') || name.includes('上海') || name.includes('广州') || name.includes('深圳')) country = 'cn';
-    else if (code === 'de' || name.includes('德国') || name.includes('法兰克福') || name.includes('de')) country = 'de';
-    else if (code === 'gb' || code === 'uk' || name.includes('英国') || name.includes('伦敦') || name.includes('uk')) country = 'gb';
-    else if (code === 'kr' || name.includes('韩国') || name.includes('首尔') || name.includes('kr')) country = 'kr';
-    else if (code === 'fr' || name.includes('法国') || name.includes('巴黎')) country = 'fr';
+  // 高清矢量 SVG 国旗渲染引擎 (彻底消灭 Windows 平台不支持 Emoji 导致的大地球和字符)
+  function getFlagSVG(code, name) {
+    const country = detectCountry(code, name);
 
     switch (country) {
       case 'hk': // 中国香港
