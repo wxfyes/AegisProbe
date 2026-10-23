@@ -155,24 +155,29 @@ install_master() {
     echo -e "${BLUE}运行环境: ${INIT_SYS} | 机器架构: ${GOARCH} | 监听端口: ${LISTEN_PORT}${PLAIN}"
     echo -e "${BLUE}=================================================================${PLAIN}"
 
-    # 第一步：停止 systemd 服务（兼容新旧服务名）
+    # 第一步：停止 + mask 封死所有旧服务（防止 Restart=always 在下载期间自动重启抢占端口）
     if [ "$INIT_SYS" = "systemd" ]; then
-        systemctl stop aegis-server 2>/dev/null || true
-        systemctl stop tianque-probe 2>/dev/null || true
+        systemctl stop aegis-server    2>/dev/null || true
+        systemctl stop tianque-probe   2>/dev/null || true
+        systemctl mask tianque-probe   2>/dev/null || true   # 彻底封死旧服务自动重启
+        systemctl mask aegis-server    2>/dev/null || true   # 临时封死，写完新 unit 再 unmask
     elif [ "$INIT_SYS" = "openwrt" ] && [ -f "${OPENWRT_INIT_DIR}/aegis-server" ]; then
         ${OPENWRT_INIT_DIR}/aegis-server stop 2>/dev/null || true
     fi
 
-    # 第二步：按进程名强杀残留
+    # 第二步：按进程名强杀残留（双保险）
     pkill -9 -x aegis_server 2>/dev/null || true
-    killall -9 aegis_server 2>/dev/null || true
+    killall -9 aegis_server  2>/dev/null || true
     sleep 1
 
-    # 第三步：按端口精准击杀 + 验证端口已释放（不释放则退出）
+    # 第三步：按端口精准击杀 + 验证端口已释放（失败则退出）
     force_free_port "$LISTEN_PORT"
 
-    # 仅下载当前架构的服务端二进制，绝不下载任何其他架构或多余文件
+    # 下载新二进制（此时旧服务已被 mask，不会在下载期间自动重启）
     download_file "$bin_name" "${srv_dir}/aegis_server"
+
+    # 下载完成后再次确认端口仍然空闲（防止任何意外进程趁隙占用）
+    force_free_port "$LISTEN_PORT"
 
     # 根据系统类型配置自启服务
     if [ "$INIT_SYS" = "systemd" ]; then
@@ -192,6 +197,8 @@ LimitNOFILE=65535
 [Install]
 WantedBy=multi-user.target
 EOF
+        # unmask 解封（之前 mask 是为了防止下载期间自动重启）
+        systemctl unmask aegis-server 2>/dev/null || true
         systemctl daemon-reload
         systemctl enable aegis-server
         systemctl restart aegis-server
