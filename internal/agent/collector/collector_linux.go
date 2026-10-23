@@ -274,57 +274,61 @@ func (c *LinuxCollector) Collect() (*common.MetricsData, error) {
 		c.cachedIPv6 = v6
 	}
 
-	// 2. 异步轻量探测公网 IP 与国家代码 (每小时或初次触发一次)
-	if time.Since(c.lastGeoCheck) > 1*time.Hour || c.cachedCountry == "" {
+	// 2. 双栈智能补齐引擎：
+	// 若缺少 v4 或 v6，每 15~30 秒重试探测直到成功；两栈齐全后降频为 1 小时校验一次
+	shouldCheck := false
+	if c.cachedCountry == "" || (c.cachedIPv4 == "" && c.cachedIPv6 == "") {
+		if time.Since(c.lastGeoCheck) > 10*time.Second {
+			shouldCheck = true
+		}
+	} else if c.cachedIPv4 == "" || c.cachedIPv6 == "" {
+		if time.Since(c.lastGeoCheck) > 20*time.Second {
+			shouldCheck = true
+		}
+	} else if time.Since(c.lastGeoCheck) > 1*time.Hour {
+		shouldCheck = true
+	}
+
+	if shouldCheck {
 		c.lastGeoCheck = now
 		go func() {
 			client := &http.Client{Timeout: 4 * time.Second}
-			// 获取综合地理信息
-			resp, err := client.Get("https://api.ip.sb/geoip")
-			if err == nil {
-				defer resp.Body.Close()
-				var res struct {
-					IP          string `json:"ip"`
-					CountryCode string `json:"country_code"`
-				}
-				if json.NewDecoder(resp.Body).Decode(&res) == nil {
-					if res.IP != "" {
-						c.cachedIP = res.IP
-						if strings.Contains(res.IP, ":") && c.cachedIPv6 == "" {
-							c.cachedIPv6 = res.IP
-						} else if strings.Contains(res.IP, ".") && c.cachedIPv4 == "" {
-							c.cachedIPv4 = res.IP
-						}
+			// 探测地理国家代码
+			if c.cachedCountry == "" {
+				resp, err := client.Get("https://api.ip.sb/geoip")
+				if err == nil {
+					defer resp.Body.Close()
+					var res struct {
+						IP          string `json:"ip"`
+						CountryCode string `json:"country_code"`
 					}
-					if res.CountryCode != "" {
-						c.cachedCountry = res.CountryCode
+					if json.NewDecoder(resp.Body).Decode(&res) == nil {
+						if res.CountryCode != "" {
+							c.cachedCountry = res.CountryCode
+						}
+						if res.IP != "" {
+							c.cachedIP = res.IP
+							if strings.Contains(res.IP, ":") && c.cachedIPv6 == "" {
+								c.cachedIPv6 = res.IP
+							} else if strings.Contains(res.IP, ".") && c.cachedIPv4 == "" {
+								c.cachedIPv4 = res.IP
+							}
+						}
 					}
 				}
 			}
 
-			// 若依然缺少 v4，尝试补充 v4
+			// 若依然缺少 v4，尝试多源冗余查询
 			if c.cachedIPv4 == "" {
-				if r4, err := client.Get("https://api-ipv4.ip.sb/ip"); err == nil {
-					defer r4.Body.Close()
-					if b, _ := io.ReadAll(r4.Body); len(b) > 0 {
-						ip := strings.TrimSpace(string(b))
-						if strings.Contains(ip, ".") {
-							c.cachedIPv4 = ip
-						}
-					}
+				if detectedV4 := queryPublicIPv4(); detectedV4 != "" {
+					c.cachedIPv4 = detectedV4
 				}
 			}
 
-			// 若依然缺少 v6，尝试补充 v6
+			// 若依然缺少 v6，尝试多源冗余查询
 			if c.cachedIPv6 == "" {
-				if r6, err := client.Get("https://api-ipv6.ip.sb/ip"); err == nil {
-					defer r6.Body.Close()
-					if b, _ := io.ReadAll(r6.Body); len(b) > 0 {
-						ip := strings.TrimSpace(string(b))
-						if strings.Contains(ip, ":") {
-							c.cachedIPv6 = ip
-						}
-					}
+				if detectedV6 := queryPublicIPv6(); detectedV6 != "" {
+					c.cachedIPv6 = detectedV6
 				}
 			}
 		}()
@@ -399,4 +403,52 @@ func detectLocalPublicIPs() (ipv4 string, ipv6 string) {
 		}
 	}
 	return ipv4, ipv6
+}
+
+func queryPublicIPv4() string {
+	endpoints := []string{
+		"https://api-ipv4.ip.sb/ip",
+		"https://v4.ident.me",
+		"https://api4.ipify.org",
+		"http://ipv4.icanhazip.com",
+	}
+	client := &http.Client{Timeout: 3 * time.Second}
+	for _, ep := range endpoints {
+		resp, err := client.Get(ep)
+		if err == nil {
+			b, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err == nil && len(b) > 0 {
+				ip := strings.TrimSpace(string(b))
+				if netIP := net.ParseIP(ip); netIP != nil && netIP.To4() != nil {
+					return ip
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func queryPublicIPv6() string {
+	endpoints := []string{
+		"https://api-ipv6.ip.sb/ip",
+		"https://v6.ident.me",
+		"https://api6.ipify.org",
+		"http://ipv6.icanhazip.com",
+	}
+	client := &http.Client{Timeout: 3 * time.Second}
+	for _, ep := range endpoints {
+		resp, err := client.Get(ep)
+		if err == nil {
+			b, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err == nil && len(b) > 0 {
+				ip := strings.TrimSpace(string(b))
+				if netIP := net.ParseIP(ip); netIP != nil && netIP.To4() == nil && netIP.To16() != nil {
+					return ip
+				}
+			}
+		}
+	}
+	return ""
 }

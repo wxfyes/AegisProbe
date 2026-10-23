@@ -12,15 +12,17 @@ import (
 	"tianque_probe/internal/common"
 	"tianque_probe/internal/server/auth"
 	"tianque_probe/internal/server/config"
+	"tianque_probe/internal/server/gfw"
 	"tianque_probe/internal/server/notify"
 	"tianque_probe/internal/server/store"
 )
 
 type RouterHandler struct {
-	cfgMgr   *config.Manager
-	store    *store.Store
-	authMgr  *auth.AuthManager
-	notifier *notify.Notifier
+	cfgMgr     *config.Manager
+	store      *store.Store
+	authMgr    *auth.AuthManager
+	notifier   *notify.Notifier
+	gfwChecker *gfw.Checker
 }
 
 func NewRouterHandler(cfgMgr *config.Manager, st *store.Store, authMgr *auth.AuthManager, notif *notify.Notifier) *RouterHandler {
@@ -30,6 +32,10 @@ func NewRouterHandler(cfgMgr *config.Manager, st *store.Store, authMgr *auth.Aut
 		authMgr:  authMgr,
 		notifier: notif,
 	}
+}
+
+func (h *RouterHandler) SetGFWChecker(checker *gfw.Checker) {
+	h.gfwChecker = checker
 }
 
 func (h *RouterHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -51,6 +57,7 @@ func (h *RouterHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/admin/node/reorder", h.adminRequireAuth(h.handleAdminNodeReorder))
 	mux.HandleFunc("/api/admin/agent_install_cmd", h.adminRequireAuth(h.handleAdminInstallCmd))
 	mux.HandleFunc("/api/admin/test_tg", h.adminRequireAuth(h.handleAdminTestTG))
+	mux.HandleFunc("/api/admin/gfw/trigger", h.adminRequireAuth(h.handleAdminGFWTrigger))
 	mux.HandleFunc("/api/admin/backup/export", h.adminRequireAuth(h.handleAdminBackupExport))
 	mux.HandleFunc("/api/admin/backup/import", h.adminRequireAuth(h.handleAdminBackupImport))
 
@@ -326,6 +333,11 @@ func (h *RouterHandler) handleAdminConfig(w http.ResponseWriter, r *http.Request
 		// 同步更新 Telegram 模块配置
 		h.notifier.UpdateConfig(req.TGEnabled, req.TGBotToken, req.TGChatID, req.TGProxy)
 
+		// 若配置了测活 URL 则立即触发一轮热检测
+		if h.gfwChecker != nil && req.GFWCheckURL != "" {
+			h.gfwChecker.TriggerCheckNow()
+		}
+
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 		return
 	}
@@ -443,6 +455,28 @@ func (h *RouterHandler) handleAdminTestTG(w http.ResponseWriter, r *http.Request
 	msg := fmt.Sprintf("🛡️ <b>【天阙·神盾安全探针】</b>\n告警通道测试成功！当前时间：%s", time.Now().Format("2006-01-02 15:04:05"))
 	h.notifier.Push(msg)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// handleAdminGFWTrigger 手动触发一次全面国内连通性测活
+func (h *RouterHandler) handleAdminGFWTrigger(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	cfg := h.cfgMgr.GetConfig()
+	if strings.TrimSpace(cfg.GFWCheckURL) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "尚未配置外部测活 API URL 模板，请先填入 API 地址并保存！",
+		})
+		return
+	}
+	if h.gfwChecker != nil {
+		h.gfwChecker.TriggerCheckNow()
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"ok":  true,
+		"msg": "已触发全部节点国内连通性测活，正在后台并发巡检，结果将秒级同步至大屏！",
+	})
 }
 
 // handleInstallScript 提供一键安装 Shell 脚本

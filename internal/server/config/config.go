@@ -178,7 +178,7 @@ func (m *Manager) UpdateSettings(title, password, accessMode string, port, offli
 	if gfwInterval > 0 {
 		m.cfg.GFWCheckInterval = gfwInterval
 	} else if m.cfg.GFWCheckInterval <= 0 {
-		m.cfg.GFWCheckInterval = 180
+		m.cfg.GFWCheckInterval = 14400 // 默认 4 小时 (14400 秒)
 	}
 
 	return m.saveLocked()

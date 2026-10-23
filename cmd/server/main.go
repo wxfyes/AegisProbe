@@ -108,6 +108,7 @@ func main() {
 	// 3. 构建 HTTP 路由网关
 	mux := http.NewServeMux()
 	routerHandler := handler.NewRouterHandler(cfgMgr, st, authMgr, notifier)
+	routerHandler.SetGFWChecker(gfwChecker)
 	routerHandler.RegisterRoutes(mux)
 
 	// 挂载嵌入式单页面前端资源 (彻底根除 404 问题)

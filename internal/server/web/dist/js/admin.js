@@ -41,6 +41,11 @@
     cfgTGChatID: document.getElementById('cfgTGChatID'),
     cfgTGProxy: document.getElementById('cfgTGProxy'),
     cfgGFWCheckURL: document.getElementById('cfgGFWCheckURL'),
+    gfwStatusBadge: document.getElementById('gfwStatusBadge'),
+    cfgGFWCheckIntervalSelect: document.getElementById('cfgGFWCheckIntervalSelect'),
+    cfgGFWCheckInterval: document.getElementById('cfgGFWCheckInterval'),
+    cfgGFWCustomIntervalGroup: document.getElementById('cfgGFWCustomIntervalGroup'),
+    btnTriggerGFW: document.getElementById('btnTriggerGFW'),
 
     nodeId: document.getElementById('nodeId'),
     nodeName: document.getElementById('nodeName'),
@@ -164,6 +169,22 @@
     }
   }
 
+  function updateGFWBadge(url, intervalSec) {
+    if (!dom.gfwStatusBadge) return;
+    if (!url) {
+      dom.gfwStatusBadge.innerHTML = '⚪ 当前未启用 (留空关闭)';
+      dom.gfwStatusBadge.style.background = 'rgba(148, 163, 184, 0.15)';
+      dom.gfwStatusBadge.style.color = 'var(--text-sub)';
+      dom.gfwStatusBadge.style.borderColor = 'var(--panel-border)';
+    } else {
+      const hours = Math.round(((intervalSec || 14400) / 3600) * 10) / 10;
+      dom.gfwStatusBadge.innerHTML = `🟢 测活巡检运行中 (每 ${hours} 小时)`;
+      dom.gfwStatusBadge.style.background = 'rgba(16, 185, 129, 0.15)';
+      dom.gfwStatusBadge.style.color = '#10b981';
+      dom.gfwStatusBadge.style.borderColor = 'rgba(16, 185, 129, 0.35)';
+    }
+  }
+
   function renderSettings(cfg) {
     dom.cfgSiteTitle.value = cfg.site_title || '';
     dom.cfgAccessMode.value = cfg.access_mode || 'public';
@@ -173,9 +194,26 @@
     dom.cfgTGBotToken.value = cfg.tg_bot_token || '';
     dom.cfgTGChatID.value = cfg.tg_chat_id || '';
     dom.cfgTGProxy.value = cfg.tg_proxy || '';
+    
+    const gfwURL = cfg.gfw_check_url || '';
     if (dom.cfgGFWCheckURL) {
-      dom.cfgGFWCheckURL.value = cfg.gfw_check_url || '';
+      dom.cfgGFWCheckURL.value = gfwURL;
     }
+    const intervalSec = cfg.gfw_check_interval || 14400;
+    if (dom.cfgGFWCheckInterval) {
+      dom.cfgGFWCheckInterval.value = intervalSec;
+    }
+    if (dom.cfgGFWCheckIntervalSelect) {
+      const presetValues = ['3600', '7200', '14400', '21600', '28800', '43200', '86400'];
+      if (presetValues.includes(String(intervalSec))) {
+        dom.cfgGFWCheckIntervalSelect.value = String(intervalSec);
+        if (dom.cfgGFWCustomIntervalGroup) dom.cfgGFWCustomIntervalGroup.style.display = 'none';
+      } else {
+        dom.cfgGFWCheckIntervalSelect.value = 'custom';
+        if (dom.cfgGFWCustomIntervalGroup) dom.cfgGFWCustomIntervalGroup.style.display = 'block';
+      }
+    }
+    updateGFWBadge(gfwURL, intervalSec);
   }
 
   let draggedRow = null;
@@ -335,6 +373,15 @@
   // 7. 保存全局系统配置
   dom.settingsForm.addEventListener('submit', async (e) => {
     e.preventDefault();
+    let gfwInterval = 14400;
+    if (dom.cfgGFWCheckIntervalSelect) {
+      if (dom.cfgGFWCheckIntervalSelect.value === 'custom') {
+        gfwInterval = parseInt(dom.cfgGFWCheckInterval.value, 10) || 14400;
+      } else {
+        gfwInterval = parseInt(dom.cfgGFWCheckIntervalSelect.value, 10) || 14400;
+      }
+    }
+
     const payload = {
       site_title: dom.cfgSiteTitle.value.trim(),
       access_mode: dom.cfgAccessMode.value,
@@ -344,7 +391,8 @@
       tg_bot_token: dom.cfgTGBotToken.value.trim(),
       tg_chat_id: dom.cfgTGChatID.value.trim(),
       tg_proxy: dom.cfgTGProxy.value.trim(),
-      gfw_check_url: dom.cfgGFWCheckURL ? dom.cfgGFWCheckURL.value.trim() : ''
+      gfw_check_url: dom.cfgGFWCheckURL ? dom.cfgGFWCheckURL.value.trim() : '',
+      gfw_check_interval: gfwInterval
     };
 
     try {
@@ -355,7 +403,7 @@
       });
       const data = await res.json();
       if (res.ok && data.ok) {
-        alert('✅ 系统配置已成功保存！');
+        showToast('✅ 系统配置已成功保存！', 'success');
         loadAdminConfig();
       } else {
         alert('❌ 保存失败: ' + (data.error || '未知错误'));
@@ -364,6 +412,58 @@
       alert('❌ 网络通信异常');
     }
   });
+
+  // 测活周期选择器与实时徽章联动
+  if (dom.cfgGFWCheckIntervalSelect) {
+    dom.cfgGFWCheckIntervalSelect.addEventListener('change', () => {
+      if (dom.cfgGFWCheckIntervalSelect.value === 'custom') {
+        if (dom.cfgGFWCustomIntervalGroup) dom.cfgGFWCustomIntervalGroup.style.display = 'block';
+      } else {
+        if (dom.cfgGFWCustomIntervalGroup) dom.cfgGFWCustomIntervalGroup.style.display = 'none';
+        if (dom.cfgGFWCheckInterval) dom.cfgGFWCheckInterval.value = dom.cfgGFWCheckIntervalSelect.value;
+      }
+      updateGFWBadge(dom.cfgGFWCheckURL ? dom.cfgGFWCheckURL.value.trim() : '', parseInt(dom.cfgGFWCheckInterval.value, 10));
+    });
+  }
+
+  if (dom.cfgGFWCheckURL) {
+    dom.cfgGFWCheckURL.addEventListener('input', () => {
+      const interval = (dom.cfgGFWCheckIntervalSelect && dom.cfgGFWCheckIntervalSelect.value !== 'custom')
+        ? parseInt(dom.cfgGFWCheckIntervalSelect.value, 10)
+        : (parseInt(dom.cfgGFWCheckInterval.value, 10) || 14400);
+      updateGFWBadge(dom.cfgGFWCheckURL.value.trim(), interval);
+    });
+  }
+
+  // 立即触发一次全网测活
+  if (dom.btnTriggerGFW) {
+    dom.btnTriggerGFW.addEventListener('click', async () => {
+      const gfwURL = dom.cfgGFWCheckURL ? dom.cfgGFWCheckURL.value.trim() : '';
+      if (!gfwURL) {
+        alert('⚠️ 请先在上方填入外部测活 API URL 模板并保存系统配置，然后再执行测活！');
+        return;
+      }
+
+      const origText = dom.btnTriggerGFW.textContent;
+      dom.btnTriggerGFW.textContent = '⏳ 正在测活巡检...';
+      dom.btnTriggerGFW.disabled = true;
+
+      try {
+        const res = await fetch('/api/admin/gfw/trigger', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok && data.ok) {
+          showToast('⚡ ' + (data.msg || '测活指令已触发，结果正秒级同步至大屏！'), 'success');
+        } else {
+          alert('❌ 触发测活失败: ' + (data.error || '未知错误'));
+        }
+      } catch (err) {
+        alert('❌ 请求测活失败，请检查网络');
+      } finally {
+        dom.btnTriggerGFW.textContent = origText;
+        dom.btnTriggerGFW.disabled = false;
+      }
+    });
+  }
 
   // 8. 测试 Telegram 发送
   dom.btnTestTG.addEventListener('click', async () => {

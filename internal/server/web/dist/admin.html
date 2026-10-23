@@ -439,19 +439,51 @@
 
             <hr style="border: 0; border-top: 1px solid var(--panel-border); margin: 20px 0;">
 
-            <div style="font-size: 14px; font-weight: 700; color: var(--text-main); margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
-              <span>🛡️</span>
-              <span>国内连通性 (是否被墙) 自动测活设置</span>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 8px;">
+              <div style="font-size: 14px; font-weight: 700; color: var(--text-main); display: flex; align-items: center; gap: 6px;">
+                <span>🛡️</span>
+                <span>国内连通性 (是否被墙) 自动测活设置</span>
+              </div>
+              <span id="gfwStatusBadge" style="font-size: 11.5px; padding: 3px 10px; border-radius: 12px; font-weight: 700; background: rgba(148, 163, 184, 0.15); color: var(--text-sub); border: 1px solid var(--panel-border);">
+                ⚪ 当前未启用
+              </span>
+            </div>
+
+            <div style="background: rgba(56, 189, 248, 0.06); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: 12px; color: var(--text-sub); line-height: 1.6;">
+              💡 <b>占位符说明</b>：<br>
+              • <code>{ip}</code>：主控巡检时<b>自动获取并代入每台机器的公网 IP</b>，无需手写具体 IP！<br>
+              • <code>{port}</code>：自动代入节点的测活探测端口（默认 22，可在下方节点列表点击【编辑】自定义修改为 80 / 443 等）。<br>
+              • 留空本输入框表示彻底关闭国内测活；配置后大屏卡片右上角将实时展示「<span style="color:#10b981;font-weight:bold;">✓ 畅通</span>」或「<span style="color:#ef4444;font-weight:bold;">✕ 被墙</span>」。
             </div>
 
             <div class="form-group">
-              <label class="form-label">外部测活 API URL 模板 (支持 {ip} 和 {port} 占位符)</label>
+              <label class="form-label">外部测活 API URL 模板</label>
               <input type="text" id="cfgGFWCheckURL" class="form-input" placeholder="例如 https://v2.xxapi.cn/api/tcping?address={ip}&port={port}">
-              <div style="font-size: 11.5px; color: var(--text-sub); margin-top: 4px;">留空表示关闭国内测活。配置后大屏卡片右上角将实时展示「✓ 畅通」或「✕ 被墙」</div>
             </div>
 
-            <div style="display: flex; gap: 12px; margin-top: 20px;">
+            <div class="grid-2">
+              <div class="form-group">
+                <label class="form-label">自动探测巡检周期 (推荐 4 ~ 24 小时)</label>
+                <select id="cfgGFWCheckIntervalSelect" class="form-select">
+                  <option value="3600">每 1 小时探测一次</option>
+                  <option value="7200">每 2 小时探测一次</option>
+                  <option value="14400" selected>每 4 小时探测一次 (推荐)</option>
+                  <option value="21600">每 6 小时探测一次</option>
+                  <option value="28800">每 8 小时探测一次</option>
+                  <option value="43200">每 12 小时探测一次</option>
+                  <option value="86400">每 24 小时探测一次 (每天一次)</option>
+                  <option value="custom">自定义秒数...</option>
+                </select>
+              </div>
+              <div class="form-group" id="cfgGFWCustomIntervalGroup" style="display: none;">
+                <label class="form-label">自定义巡检间隔 (秒)</label>
+                <input type="number" id="cfgGFWCheckInterval" class="form-input" value="14400" min="60" step="60" placeholder="单位：秒">
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 12px; margin-top: 20px; flex-wrap: wrap;">
               <button type="submit" class="btn-primary" style="width: auto; padding: 10px 24px;">保存系统配置</button>
+              <button type="button" id="btnTriggerGFW" class="btn-sm" style="padding: 10px 18px; background: #0284c7; color: #fff; border-color: #0284c7;">⚡ 立即测活一次</button>
               <button type="button" id="btnTestTG" class="btn-sm" style="padding: 10px 18px;">🔔 发送 TG 测试消息</button>
             </div>
           </form>

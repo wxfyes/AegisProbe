@@ -402,6 +402,43 @@ EOF
     echo -e "${GREEN}=================================================================${PLAIN}"
 }
 
+# 快捷热更新受控端二进制 (保留原配置秒级生效)
+update_agent_binary() {
+    check_root
+    detect_arch
+    detect_init_sys
+
+    local agent_bin="${INSTALL_DIR}/agent/aegis_agent"
+    if [ ! -f "$agent_bin" ]; then
+        echo -e "${RED}❌ 未检测到已安装的 AegisProbe Agent！请直接使用后台一键命令安装。${PLAIN}"
+        exit 1
+    fi
+
+    echo -e "${CYAN}⬇️  正在下载最新版 AegisProbe Agent (${GOARCH})...${PLAIN}"
+    local download_url="https://github.com/${REPO}/releases/latest/download/aegis_agent_linux_${GOARCH}"
+    local proxy_url="https://mirror.ghproxy.com/${download_url}"
+
+    local tmp_bin="/tmp/aegis_agent_${GOARCH}"
+    if ! curl -fsSL --connect-timeout 8 "$download_url" -o "$tmp_bin" 2>/dev/null; then
+        echo -e "${YELLOW}⚠️ 直连下载较慢，正在切换国内极速镜像...${PLAIN}"
+        curl -fsSL --connect-timeout 15 "$proxy_url" -o "$tmp_bin"
+    fi
+
+    chmod +x "$tmp_bin"
+    mv -f "$tmp_bin" "$agent_bin"
+    chmod 755 "$agent_bin"
+
+    echo -e "${GREEN}🔄 正在热重启探针服务...${PLAIN}"
+    if [ "$INIT_SYS" = "systemd" ]; then
+        systemctl restart aegis-agent
+    elif [ "$INIT_SYS" = "openrc" ]; then
+        rc-service aegis-agent restart
+    elif [ "$INIT_SYS" = "openwrt" ]; then
+        /etc/init.d/aegis-agent restart
+    fi
+    echo -e "${GREEN}✅ 受控端探针已成功热更新至最新版本！双栈 IP 已就绪。${PLAIN}"
+}
+
 # 查看运行状态与密码
 view_server_status() {
     detect_init_sys
@@ -532,6 +569,10 @@ while [[ $# -gt 0 ]]; do
                 esac
             done
             install_agent "$server" "$id" "$token"
+            exit 0
+            ;;
+        --update-agent)
+            update_agent_binary
             exit 0
             ;;
         --backup)

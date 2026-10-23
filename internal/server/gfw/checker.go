@@ -45,7 +45,7 @@ func (c *Checker) Start(ctx context.Context) {
 			cfg := c.cfgMgr.GetConfig()
 			intervalSec := cfg.GFWCheckInterval
 			if intervalSec <= 0 {
-				intervalSec = 180
+				intervalSec = 14400 // 默认 4 小时 (14400 秒)
 			}
 
 			select {
@@ -56,6 +56,11 @@ func (c *Checker) Start(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+// TriggerCheckNow 手动立即触发一轮国内连通性测活
+func (c *Checker) TriggerCheckNow() {
+	go c.checkAll()
 }
 
 // checkAll 执行一轮测活
