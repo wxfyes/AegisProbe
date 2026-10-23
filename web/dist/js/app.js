@@ -156,13 +156,28 @@
     });
   }
 
-  // 6. 渲染节点卡片 (纯 CSS 硬件合成加速 transform)
+  // 6. 渲染节点卡片 (原地精确更新 DOM，彻底杜绝全量重排，零 GPU 负担)
   function renderNodes(nodes) {
     const filtered = nodes.filter(n => currentGroup === '所有' || n.group === currentGroup);
-    
-    // 复用或全量重绘 DOM
-    dom.nodeGrid.innerHTML = filtered.map(node => {
-      const isOnline = node.status.is_online;
+    const existingCards = new Map();
+    dom.nodeGrid.querySelectorAll('.node-card').forEach(card => {
+      existingCards.set(card.dataset.id, card);
+    });
+
+    // 追踪本次需要保留的节点 ID
+    const currentIds = new Set(filtered.map(n => n.id));
+
+    // 移除不再存在的卡片
+    existingCards.forEach((card, id) => {
+      if (!currentIds.has(id)) {
+        card.remove();
+        existingCards.delete(id);
+      }
+    });
+
+    filtered.forEach((node, index) => {
+      let card = existingCards.get(node.id);
+      const isOnline = !!node.status.is_online;
       const daysLeft = node.billing.days_left;
       
       let dayClass = 'green';
@@ -176,19 +191,17 @@
         dayClass = 'yellow';
       }
 
-      const cpuScale = Math.min(node.status.cpu_pct / 100, 1);
-      const ramScale = Math.min(node.status.ram_pct / 100, 1);
-      const diskScale = Math.min(node.status.disk_pct / 100, 1);
+      const cpuPct = isOnline ? node.status.cpu_pct : 0;
+      const ramPct = isOnline ? node.status.ram_pct : 0;
+      const diskPct = isOnline ? node.status.disk_pct : 0;
+      const swapPct = (!node.status.swap_off && isOnline) ? node.status.swap_pct : 0;
 
-      let swapScale = 0;
-      let swapValHtml = '<span class="bar-val off">OFF</span>';
-      if (!node.status.swap_off) {
-        swapScale = Math.min(node.status.swap_pct / 100, 1);
-        swapValHtml = `<span class="bar-val">${node.status.swap_pct}%</span>`;
-      }
-
-      return `
-        <div class="node-card ${isOnline ? '' : 'offline'}" data-id="${node.id}">
+      if (!card) {
+        // 首次挂载创建 DOM 节点
+        card = document.createElement('div');
+        card.className = `node-card ${isOnline ? '' : 'offline'}`;
+        card.dataset.id = node.id;
+        card.innerHTML = `
           <div class="card-header">
             <div class="card-title-group">
               <span class="node-flag">${node.flag || '🌐'}</span>
@@ -203,63 +216,119 @@
           </div>
 
           <div class="card-hardware">
-            <span>⚙️ ${node.hardware.cpu_cores || 1} Cores</span>
-            <span>🗄️ ${node.hardware.ram_str}</span>
-            <span>💾 ${node.hardware.disk_str}</span>
+            <span><span class="hw-icon-cpu">🖥️</span> <span class="val-cores">${node.hardware.cpu_cores || 1} Cores</span></span>
+            <span><span class="hw-icon-ram">🗄️</span> <span class="val-ram">${node.hardware.ram_str}</span></span>
+            <span><span class="hw-icon-disk">💾</span> <span class="val-disk">${node.hardware.disk_str}</span></span>
           </div>
 
           <div class="metrics-bars">
             <div class="bar-row">
               <span class="bar-label">CPU</span>
-              <div class="bar-track">
-                <div class="bar-fill cpu" style="transform: scaleX(${isOnline ? cpuScale : 0});"></div>
-              </div>
-              <span class="bar-val">${isOnline ? node.status.cpu_pct : 0}%</span>
+              <div class="bar-track"><div class="bar-fill bar-fill-cpu" style="width: ${cpuPct}%;"></div></div>
+              <span class="bar-val val-cpu-pct">${cpuPct}%</span>
             </div>
             <div class="bar-row">
               <span class="bar-label">内存</span>
-              <div class="bar-track">
-                <div class="bar-fill ram" style="transform: scaleX(${isOnline ? ramScale : 0});"></div>
-              </div>
-              <span class="bar-val">${isOnline ? node.status.ram_pct : 0}%</span>
+              <div class="bar-track"><div class="bar-fill bar-fill-ram" style="width: ${ramPct}%;"></div></div>
+              <span class="bar-val val-ram-pct">${ramPct}%</span>
             </div>
             <div class="bar-row">
               <span class="bar-label">SWAP</span>
-              <div class="bar-track">
-                <div class="bar-fill swap" style="transform: scaleX(${isOnline ? swapScale : 0});"></div>
-              </div>
-              ${swapValHtml}
+              <div class="bar-track"><div class="bar-fill bar-fill-swap" style="width: ${swapPct}%;"></div></div>
+              <span class="bar-val val-swap-pct ${node.status.swap_off ? 'off' : ''}">${node.status.swap_off ? 'OFF' : swapPct + '%'}</span>
             </div>
             <div class="bar-row">
               <span class="bar-label">硬盘</span>
-              <div class="bar-track">
-                <div class="bar-fill disk" style="transform: scaleX(${isOnline ? diskScale : 0});"></div>
-              </div>
-              <span class="bar-val">${isOnline ? node.status.disk_pct : 0}%</span>
+              <div class="bar-track"><div class="bar-fill bar-fill-disk" style="width: ${diskPct}%;"></div></div>
+              <span class="bar-val val-disk-pct">${diskPct}%</span>
             </div>
           </div>
 
           <div class="card-details">
             <div class="detail-row">
-              <span>网络</span>
-              <span><span class="up">↑ ${node.status.speed_up_str}</span> <span class="down">↓ ${node.status.speed_down_str}</span></span>
+              <span class="label">网络</span>
+              <span class="speed-text"><span class="up">↑</span> <span class="val-speed-up">${node.status.speed_up_str}</span> <span class="down">↓</span> <span class="val-speed-down">${node.status.speed_down_str}</span></span>
             </div>
             <div class="detail-row">
-              <span>流量</span>
-              <span><span class="up">↑ ${node.status.traffic_up_str}</span> <span class="down">↓ ${node.status.traffic_down_str}</span></span>
+              <span class="label">流量</span>
+              <span class="traffic-text"><span class="up">↑</span> <span class="val-traffic-up">${node.status.traffic_up_str}</span> <span class="down">↓</span> <span class="val-traffic-down">${node.status.traffic_down_str}</span></span>
             </div>
             <div class="detail-row">
-              <span>负载</span>
-              <span class="val">${node.status.load_str}</span>
+              <span class="label">负载</span>
+              <span class="val val-load">${node.status.load_str}</span>
             </div>
             <div class="detail-row">
-              <span>周期</span>
-              <span>到期: ${node.billing.expire_date || '--'} &nbsp; ${node.status.uptime_str}</span>
+              <span class="label">周期</span>
+              <span class="val val-cycle">到期: ${node.billing.expire_date || '--'} &nbsp; ${node.status.uptime_str}</span>
             </div>
           </div>
-        </div>
-      `;
-    }).join('');
+        `;
+        dom.nodeGrid.appendChild(card);
+      } else {
+        // 原地精细化更新已有卡片，零重排，零丢帧
+        if (isOnline) {
+          card.classList.remove('offline');
+        } else {
+          card.classList.add('offline');
+        }
+
+        // 胶囊更新
+        const capDays = card.querySelector('.capsule-days');
+        if (capDays) {
+          capDays.className = `capsule capsule-days ${dayClass}`;
+          capDays.textContent = dayText;
+        }
+
+        // 硬件更新
+        const valCores = card.querySelector('.val-cores');
+        if (valCores) valCores.textContent = `${node.hardware.cpu_cores || 1} Cores`;
+        const valRam = card.querySelector('.val-ram');
+        if (valRam) valRam.textContent = node.hardware.ram_str;
+        const valDisk = card.querySelector('.val-disk');
+        if (valDisk) valDisk.textContent = node.hardware.disk_str;
+
+        // 进度条与数值更新
+        const barCpu = card.querySelector('.bar-fill-cpu');
+        if (barCpu) barCpu.style.width = `${cpuPct}%`;
+        const valCpu = card.querySelector('.val-cpu-pct');
+        if (valCpu) valCpu.textContent = `${cpuPct}%`;
+
+        const barRam = card.querySelector('.bar-fill-ram');
+        if (barRam) barRam.style.width = `${ramPct}%`;
+        const valRamPct = card.querySelector('.val-ram-pct');
+        if (valRamPct) valRamPct.textContent = `${ramPct}%`;
+
+        const barSwap = card.querySelector('.bar-fill-swap');
+        if (barSwap) barSwap.style.width = `${swapPct}%`;
+        const valSwap = card.querySelector('.val-swap-pct');
+        if (valSwap) {
+          valSwap.className = `bar-val val-swap-pct ${node.status.swap_off ? 'off' : ''}`;
+          valSwap.textContent = node.status.swap_off ? 'OFF' : `${swapPct}%`;
+        }
+
+        const barDisk = card.querySelector('.bar-fill-disk');
+        if (barDisk) barDisk.style.width = `${diskPct}%`;
+        const valDiskPct = card.querySelector('.val-disk-pct');
+        if (valDiskPct) valDiskPct.textContent = `${diskPct}%`;
+
+        // 详情行更新 (网速、流量、负载、周期)
+        const speedUp = card.querySelector('.val-speed-up');
+        if (speedUp) speedUp.textContent = node.status.speed_up_str;
+        const speedDown = card.querySelector('.val-speed-down');
+        if (speedDown) speedDown.textContent = node.status.speed_down_str;
+
+        const trafficUp = card.querySelector('.val-traffic-up');
+        if (trafficUp) trafficUp.textContent = node.status.traffic_up_str;
+        const trafficDown = card.querySelector('.val-traffic-down');
+        if (trafficDown) trafficDown.textContent = node.status.traffic_down_str;
+
+        const valLoad = card.querySelector('.val-load');
+        if (valLoad) valLoad.textContent = node.status.load_str;
+
+        const valCycle = card.querySelector('.val-cycle');
+        if (valCycle) valCycle.textContent = `到期: ${node.billing.expire_date || '--'}   ${node.status.uptime_str}`;
+      }
+    });
   }
 
   // 工具辅助函数
