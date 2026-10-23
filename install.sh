@@ -273,13 +273,10 @@ After=network.target
 Type=simple
 User=nobody
 Group=nogroup
-WorkingDirectory=${agent_dir}
 ExecStart=${agent_dir}/aegis_agent -server=${server_url} -id=${node_id} -token=${node_token}
 Restart=always
 RestartSec=3
 NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=true
 
 [Install]
 WantedBy=multi-user.target

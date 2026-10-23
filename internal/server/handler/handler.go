@@ -353,32 +353,22 @@ func (h *RouterHandler) handleInstallScript(w http.ResponseWriter, r *http.Reque
 
 	script := fmt.Sprintf(`#!/usr/bin/env bash
 # ==============================================================================
-# 天阙·神盾安全探针 (TianQue-Probe) 一键部署脚本
-# 【安全铁律】：纯单向推送、强制使用 nobody 非特权用户运行、零入站监听
+# 天阙·神盾安全探针 (TianQue-Probe) 一键部署脚本 (由主控动态生成)
+# 【安全铁律】：纯单向推送、nobody 非特权运行、零入站监听
 # ==============================================================================
 set -e
 
+REPO="wxfyes/AegisProbe"
 SERVER_URL="%s"
 NODE_ID=""
 TOKEN=""
 
 while [[ $# -gt 0 ]]; do
   case $1 in
-    --server=*)
-      SERVER_URL="${1#*=}"
-      shift
-      ;;
-    --id=*)
-      NODE_ID="${1#*=}"
-      shift
-      ;;
-    --token=*)
-      TOKEN="${1#*=}"
-      shift
-      ;;
-    *)
-      shift
-      ;;
+    --server=*) SERVER_URL="${1#*=}"; shift ;;
+    --id=*)     NODE_ID="${1#*=}";    shift ;;
+    --token=*)  TOKEN="${1#*=}";      shift ;;
+    *)          shift ;;
   esac
 done
 
@@ -389,37 +379,40 @@ fi
 
 echo "🛡️ 开始部署天阙·神盾被控探针..."
 
-# 检查系统架构
+# 精准架构检测 (只下载当前机器所需单一二进制)
 ARCH=$(uname -m)
 case $ARCH in
-  x86_64)
-    BIN_NAME="aegis_agent_linux_amd64"
-    ;;
-  aarch64|arm64)
-    BIN_NAME="aegis_agent_linux_arm64"
-    ;;
-  i386|i686)
-    BIN_NAME="aegis_agent_linux_386"
-    ;;
+  x86_64|amd64)   BIN_NAME="aegis_agent_linux_amd64" ;;
+  aarch64|arm64)  BIN_NAME="aegis_agent_linux_arm64"  ;;
+  i386|i686)      BIN_NAME="aegis_agent_linux_386"    ;;
   *)
     echo "❌ 暂不支持的架构: $ARCH"
     exit 1
     ;;
 esac
 
-INSTALL_DIR="/opt/tianque-probe"
-mkdir -p "$INSTALL_DIR"
-cd "$INSTALL_DIR"
+AGENT_DIR="/opt/aegis-probe/agent"
+mkdir -p "$AGENT_DIR"
 
-echo "📥 正在从主控下载探针二进制: ${SERVER_URL}/download/${BIN_NAME} ..."
-curl -fsSL "${SERVER_URL}/download/${BIN_NAME}" -o aegis_agent || {
-  echo "❌ 下载二进制文件失败，请确保主控服务正常且网络通畅！"
-  exit 1
-}
-chmod +x aegis_agent
+echo "📥 正在精准下载 ${BIN_NAME} (架构: ${ARCH})..."
+GH_URL="https://github.com/${REPO}/releases/latest/download/${BIN_NAME}"
+MIRROR_URL="https://mirror.ghproxy.com/${GH_URL}"
 
-# 创建受限制的系统服务 (强制 nobody 最小特权)
-cat <<EOF > /etc/systemd/system/tianque-probe.service
+if curl -fL --connect-timeout 6 -m 30 "$GH_URL" -o "${AGENT_DIR}/aegis_agent" 2>/dev/null; then
+  echo "✓ 从 GitHub 直连下载成功"
+else
+  echo "⚠️ 直连超时，切换镜像加速节点重试..."
+  if curl -fL --connect-timeout 10 -m 60 "$MIRROR_URL" -o "${AGENT_DIR}/aegis_agent" 2>/dev/null; then
+    echo "✓ 从加速通道下载成功"
+  else
+    echo "❌ 下载失败！请检查网络或 GitHub Release 是否存在。"
+    exit 1
+  fi
+fi
+chmod +x "${AGENT_DIR}/aegis_agent"
+
+# 配置 systemd 服务 (nobody 最小特权，无 ProtectSystem 避免执行权限问题)
+cat <<EOF > /etc/systemd/system/aegis-agent.service
 [Unit]
 Description=TianQue Aegis Probe Agent
 After=network.target
@@ -428,25 +421,28 @@ After=network.target
 Type=simple
 User=nobody
 Group=nogroup
-WorkingDirectory=${INSTALL_DIR}
-ExecStart=${INSTALL_DIR}/aegis_agent -server=${SERVER_URL} -id=${NODE_ID} -token=${TOKEN}
+ExecStart=${AGENT_DIR}/aegis_agent -server=${SERVER_URL} -id=${NODE_ID} -token=${TOKEN}
 Restart=always
-RestartSec=5
+RestartSec=3
 NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=true
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable tianque-probe
-systemctl restart tianque-probe
+systemctl enable aegis-agent
+systemctl restart aegis-agent
 
-echo "✅ 天阙·神盾探针已成功安装并启动！"
-echo "🛡️ 当前运行用户: nobody (纯单向推送，零入站监听，物理级防渗透)"
-systemctl status tianque-probe --no-pager
+sleep 2
+if systemctl is-active --quiet aegis-agent; then
+  echo "✅ 天阙·神盾探针已成功安装并启动！"
+  echo "🛡️ 数据正在单向汇报至: ${SERVER_URL}"
+else
+  echo "❌ 探针启动异常，请查看日志："
+  journalctl -u aegis-agent -n 15 --no-pager
+  exit 1
+fi
 `, serverURL)
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
