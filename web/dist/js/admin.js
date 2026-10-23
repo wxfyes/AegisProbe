@@ -285,12 +285,41 @@
   });
 
   dom.btnCopyCmd.addEventListener('click', () => {
-    navigator.clipboard.writeText(dom.cmdText.textContent).then(() => {
-      alert('✅ 一键安装命令已复制到剪贴板！');
-    }).catch(() => {
-      alert('请手动全选复制框内命令');
-    });
+    const text = dom.cmdText.textContent;
+
+    // 优先使用现代 Clipboard API (HTTPS环境)
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        dom.btnCopyCmd.textContent = '✅ 已复制！';
+        setTimeout(() => { dom.btnCopyCmd.textContent = '📋 复制命令'; }, 2000);
+      }).catch(() => fallbackCopy(text));
+    } else {
+      // HTTP 环境 fallback：创建临时 textarea 执行 execCommand
+      fallbackCopy(text);
+    }
   });
+
+  function fallbackCopy(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try {
+      const ok = document.execCommand('copy');
+      if (ok) {
+        dom.btnCopyCmd.textContent = '✅ 已复制！';
+        setTimeout(() => { dom.btnCopyCmd.textContent = '📋 复制命令'; }, 2000);
+      } else {
+        alert('自动复制失败，请手动全选框内命令再按 Ctrl+C 复制');
+      }
+    } catch (e) {
+      alert('自动复制失败，请手动全选框内命令再按 Ctrl+C 复制');
+    } finally {
+      document.body.removeChild(ta);
+    }
+  }
 
   function escapeHtml(str) {
     if (!str) return '';

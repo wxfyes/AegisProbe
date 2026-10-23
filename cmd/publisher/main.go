@@ -61,14 +61,14 @@ func main() {
 	}
 	log.Printf("✓ 目标 Release ID: %d (Tag: %s)", release.ID, release.TagName)
 
-	// 3. 待上传的文件
+	// 3. 待上传的文件 (统一从 bin 目录读取最新交叉编译产物)
 	filesToUpload := []string{
-		"release_bins/aegis_server_linux_amd64",
-		"release_bins/aegis_server_windows_amd64.exe",
-		"release_bins/downloads/aegis_agent_linux_amd64",
-		"release_bins/downloads/aegis_agent_linux_arm64",
-		"release_bins/downloads/aegis_agent_linux_386",
-		"release_bins/downloads/aegis_agent_windows_amd64.exe",
+		"bin/aegis_server_linux_amd64",
+		"bin/aegis_server_windows_amd64.exe",
+		"bin/aegis_agent_linux_amd64",
+		"bin/aegis_agent_linux_arm64",
+		"bin/aegis_agent_linux_386",
+		"bin/aegis_agent_windows_amd64.exe",
 		"install.sh",
 	}
 
