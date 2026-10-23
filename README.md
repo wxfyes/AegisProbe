@@ -84,31 +84,37 @@
 
 ---
 
-## 🚀 快速上手与部署
+## 🚀 极速一键部署 (支持 Master 服务端 & Agent 受控端)
 
-### 方式一：使用预编译二进制运行（推荐）
+无论是探针主控服务端，还是被控节点，均可通过官方最新 Release 脚本实现**秒级自动化无感安装**：
 
-#### 1. 启动服务端 (Master)
-下载对应系统架构的服务端二进制（位于 `release_bins/` 目录），直接运行：
-
+### 1. 一键安装主控服务端 (Master)
+在您的主控服务器终端直接执行：
 ```bash
-# Linux AMD64 运行 (指定端口为 8989)
-chmod +x aegis_server_linux_amd64
-./aegis_server_linux_amd64 -port=8989
+curl -fsSL https://github.com/wxfyes/AegisProbe/releases/latest/download/install.sh | bash -s -- --master
 ```
+*(国内 VPS 极速镜像: `curl -fsSL https://mirror.ghproxy.com/https://github.com/wxfyes/AegisProbe/releases/latest/download/install.sh | bash -s -- --master`)*
 
-- **访问监控大屏**：`http://你的服务器IP:8989`
-- **访问管理控制台**：`http://你的服务器IP:8989/admin.html`
-- *首次启动时服务端会在终端随机生成初始管理员密码，数据自动原子保存于 `data/config.json`。*
+- 脚本会自动检测架构、下载最新静态服务端二进制、配置开机自启 systemd 服务并启动；
+- **监控大屏**：`http://你的服务器IP:8989`
+- **管理控制台**：`http://你的服务器IP:8989/admin.html`（终端会自动显示随机初始管理员密码）。
 
-#### 2. 受控端 (Agent) 一键安全安装
-登录管理控制台（`/admin.html`），在节点列表中点击 **【一键命令】** 复制生成的专用安装指令：
+---
 
+### 2. 一键安装受控端 (Agent)
+登录管理后台（`/admin.html`），在节点列表中点击 **【一键命令】** 复制生成的专用指令，或直接在被控机器执行：
 ```bash
-curl -fsSL http://你的主控IP:8989/install.sh | bash -s -- --server=http://你的主控IP:8989 --id=hk-01 --token=YOUR_TOKEN
+curl -fsSL https://github.com/wxfyes/AegisProbe/releases/latest/download/install.sh | bash -s -- --agent --server=http://你的主控IP:8989 --id=node_01 --token=YOUR_TOKEN
 ```
+> **安全沙箱保证**：安装脚本自动创建受限用户 `nobody:nogroup`，配置 systemd 严格限制特权（`NoNewPrivileges=true`, `ProtectSystem=strict`），无任何入站端口，零下行渗透通道。
 
-> **系统服务保护说明**：一键脚本会自动检测系统架构（x86_64 / aarch64 / i386），下载对应二进制，并配置 systemd 受限服务 `tianque-probe.service`（以 `nobody` 用户运行）。
+---
+
+### 3. 多功能交互式运维管理菜单
+如需查看状态、获取密码、重启服务或卸载，可直接运行交互式菜单：
+```bash
+bash <(curl -fsSL https://github.com/wxfyes/AegisProbe/releases/latest/download/install.sh)
+```
 
 ---
 

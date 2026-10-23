@@ -1,3 +1,6 @@
+# 密钥凭证
+.token
+
 # 运行时数据与配置文件
 data/config.json
 data/*.tmp
