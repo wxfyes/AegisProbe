@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"tianque_probe/internal/common"
@@ -88,6 +90,30 @@ func (h *RouterHandler) handleReport(w http.ResponseWriter, r *http.Request) {
 	if !h.cfgMgr.ValidateNodeToken(payload.NodeID, payload.AuthToken) {
 		http.Error(w, "Unauthorized Node", http.StatusUnauthorized)
 		return
+	}
+
+	// 提取上报客户端的真实公网 IP (支持反代及直连，零下行防渗透)
+	clientIP := r.Header.Get("CF-Connecting-IP")
+	if clientIP == "" {
+		clientIP = r.Header.Get("X-Forwarded-For")
+		if clientIP != "" {
+			clientIP = strings.Split(clientIP, ",")[0]
+		}
+	}
+	if clientIP == "" {
+		clientIP = r.Header.Get("X-Real-IP")
+	}
+	if clientIP == "" {
+		host, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err == nil {
+			clientIP = host
+		} else {
+			clientIP = r.RemoteAddr
+		}
+	}
+	clientIP = strings.TrimSpace(clientIP)
+	if payload.Metrics.PublicIP == "" {
+		payload.Metrics.PublicIP = clientIP
 	}
 
 	// 更新内存状态 (绝对不生成或返回任何反向下行指令)
@@ -205,9 +231,38 @@ func (h *RouterHandler) adminRequireAuth(next http.HandlerFunc) http.HandlerFunc
 func (h *RouterHandler) handleAdminConfig(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		cfg := h.cfgMgr.GetConfig()
-		// 安全保护：不向前端泄露密码明文（仅返回占位符）
-		resp := cfg
-		resp.AdminPassword = "******"
+
+		type AdminNodeView struct {
+			common.NodeConfig
+			RealIP   string `json:"real_ip"`
+			RealOS   string `json:"real_os"`
+			IsOnline bool   `json:"is_online"`
+		}
+
+		adminNodes := make([]AdminNodeView, 0, len(cfg.Nodes))
+		for _, n := range cfg.Nodes {
+			ip, osName, isOnline := h.store.GetNodeRealInfo(n.ID)
+			adminNodes = append(adminNodes, AdminNodeView{
+				NodeConfig: n,
+				RealIP:     ip,
+				RealOS:     osName,
+				IsOnline:   isOnline,
+			})
+		}
+
+		resp := map[string]interface{}{
+			"site_title":     cfg.SiteTitle,
+			"access_mode":    cfg.AccessMode,
+			"listen_port":    cfg.ListenPort,
+			"offline_sec":    cfg.OfflineSec,
+			"warn_days":      cfg.WarnDays,
+			"tg_enabled":     cfg.TGEnabled,
+			"tg_bot_token":   cfg.TGBotToken,
+			"tg_chat_id":     cfg.TGChatID,
+			"tg_proxy":       cfg.TGProxy,
+			"admin_password": "******",
+			"nodes":          adminNodes,
+		}
 		writeJSON(w, http.StatusOK, resp)
 		return
 	}
@@ -379,6 +434,17 @@ fi
 
 echo "🛡️ 开始部署天阙·神盾被控探针..."
 
+# 检查服务管理器 (Systemd vs Alpine OpenRC vs OpenWrt procd vs 通用后台)
+if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+  INIT_SYS="systemd"
+elif [ -f /etc/alpine-release ] || command -v rc-service >/dev/null 2>&1; then
+  INIT_SYS="openrc"
+elif [ -f /etc/openwrt_release ] || command -v procd >/dev/null 2>&1; then
+  INIT_SYS="openwrt"
+else
+  INIT_SYS="generic"
+fi
+
 # 精准架构检测 (只下载当前机器所需单一二进制)
 ARCH=$(uname -m)
 case $ARCH in
@@ -394,14 +460,20 @@ esac
 AGENT_DIR="/opt/aegis-probe/agent"
 mkdir -p "$AGENT_DIR"
 
-# 停止并清理旧版 agent（兼容新旧两种服务名）
-systemctl stop aegis-agent 2>/dev/null || true
-systemctl stop tianque-probe 2>/dev/null || true
+# 停止并清理旧版 agent
+if [ "$INIT_SYS" = "systemd" ]; then
+  systemctl stop aegis-agent 2>/dev/null || true
+  systemctl stop tianque-probe 2>/dev/null || true
+elif [ "$INIT_SYS" = "openrc" ]; then
+  rc-service aegis-agent stop 2>/dev/null || true
+elif [ "$INIT_SYS" = "openwrt" ]; then
+  /etc/init.d/aegis-agent stop 2>/dev/null || true
+fi
 pkill -9 -x aegis_agent 2>/dev/null || true
 killall -9 aegis_agent 2>/dev/null || true
 sleep 1
 
-echo "📥 正在精准下载 ${BIN_NAME} (架构: ${ARCH})..."
+echo "📥 正在精准下载 ${BIN_NAME} (系统: ${INIT_SYS} | 架构: ${ARCH})..."
 GH_URL="https://github.com/${REPO}/releases/latest/download/${BIN_NAME}"
 MIRROR_URL="https://mirror.ghproxy.com/${GH_URL}"
 
@@ -418,11 +490,10 @@ else
 fi
 chmod +x "${AGENT_DIR}/aegis_agent"
 
-# 清理旧服务单元文件（兼容 tianque-probe.service 旧名）
-rm -f /etc/systemd/system/tianque-probe.service 2>/dev/null || true
-
-# 配置 systemd 服务 (nobody 最小特权，无 ProtectSystem 避免执行权限问题)
-cat <<EOF > /etc/systemd/system/aegis-agent.service
+# 根据系统自启环境分别配置
+if [ "$INIT_SYS" = "systemd" ]; then
+  rm -f /etc/systemd/system/tianque-probe.service 2>/dev/null || true
+  cat <<EOF > /etc/systemd/system/aegis-agent.service
 [Unit]
 Description=TianQue Aegis Probe Agent
 After=network.target
@@ -439,20 +510,64 @@ NoNewPrivileges=true
 [Install]
 WantedBy=multi-user.target
 EOF
+  systemctl daemon-reload
+  systemctl enable aegis-agent
+  systemctl restart aegis-agent
+  sleep 2
+  if systemctl is-active --quiet aegis-agent; then
+    echo "✅ 天阙·神盾探针已成功安装并启动！"
+  else
+    echo "❌ 探针启动异常，请查看日志："
+    journalctl -u aegis-agent -n 15 --no-pager
+    exit 1
+  fi
 
-systemctl daemon-reload
-systemctl enable aegis-agent
-systemctl restart aegis-agent
+elif [ "$INIT_SYS" = "openrc" ]; then
+  # Alpine Linux (OpenRC) 极速轻量原生服务支持
+  cat <<EOF > /etc/init.d/aegis-agent
+#!/sbin/openrc-run
+name="aegis-agent"
+description="TianQue Aegis Probe Agent"
+command="${AGENT_DIR}/aegis_agent"
+command_args="-server=${SERVER_URL} -id=${NODE_ID} -token=${TOKEN}"
+command_background="true"
+pidfile="/run/aegis-agent.pid"
 
-sleep 2
-if systemctl is-active --quiet aegis-agent; then
-  echo "✅ 天阙·神盾探针已成功安装并启动！"
-  echo "🛡️ 数据正在单向汇报至: ${SERVER_URL}"
+depend() {
+  need net
+  after firewall
+}
+EOF
+  chmod +x /etc/init.d/aegis-agent
+  rc-update add aegis-agent default 2>/dev/null || true
+  rc-service aegis-agent restart
+  echo "✅ 天阙·神盾探针已在 Alpine Linux (OpenRC) 成功启动！"
+
+elif [ "$INIT_SYS" = "openwrt" ]; then
+  # 软路由 OpenWrt procd 支持
+  cat <<EOF > /etc/init.d/aegis-agent
+#!/bin/sh /etc/rc.common
+START=99
+USE_PROCD=1
+start_service() {
+  procd_open_instance
+  procd_set_param command ${AGENT_DIR}/aegis_agent -server=${SERVER_URL} -id=${NODE_ID} -token=${TOKEN}
+  procd_set_param respawn 3600 5 0
+  procd_close_instance
+}
+EOF
+  chmod +x /etc/init.d/aegis-agent
+  /etc/init.d/aegis-agent enable
+  /etc/init.d/aegis-agent restart
+  echo "✅ 天阙·神盾探针已在 OpenWrt 软路由启动！"
+
 else
-  echo "❌ 探针启动异常，请查看日志："
-  journalctl -u aegis-agent -n 15 --no-pager
-  exit 1
+  # 通用后台保活
+  nohup ${AGENT_DIR}/aegis_agent -server=${SERVER_URL} -id=${NODE_ID} -token=${TOKEN} >/dev/null 2>&1 &
+  echo "✅ 天阙·神盾探针已在后台运行！"
 fi
+
+echo "🛡️ 数据正在单向安全汇报至: ${SERVER_URL} (内存占用 < 4MB，零入站监听)"
 `, serverURL)
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")

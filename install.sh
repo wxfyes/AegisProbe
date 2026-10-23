@@ -50,10 +50,12 @@ detect_arch() {
     esac
 }
 
-# 服务管理器检测 (Systemd vs OpenWrt procd vs 通用后台)
+# 服务管理器检测 (Systemd vs OpenRC vs OpenWrt procd vs 通用后台)
 detect_init_sys() {
     if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
         INIT_SYS="systemd"
+    elif [ -f /etc/alpine-release ] || (command -v rc-service >/dev/null 2>&1 && [ -d /etc/init.d ]); then
+        INIT_SYS="openrc"
     elif [ -f /etc/openwrt_release ] || [ -f /etc/init.d/procd ] || command -v procd >/dev/null 2>&1; then
         INIT_SYS="openwrt"
     else
@@ -161,6 +163,9 @@ install_master() {
         systemctl stop tianque-probe   2>/dev/null || true
         systemctl mask tianque-probe   2>/dev/null || true   # 彻底封死旧服务自动重启
         systemctl mask aegis-server    2>/dev/null || true   # 临时封死，写完新 unit 再 unmask
+    elif [ "$INIT_SYS" = "openrc" ]; then
+        rc-service aegis-server stop 2>/dev/null || true
+        rc-service tianque-probe stop 2>/dev/null || true
     elif [ "$INIT_SYS" = "openwrt" ] && [ -f "${OPENWRT_INIT_DIR}/aegis-server" ]; then
         ${OPENWRT_INIT_DIR}/aegis-server stop 2>/dev/null || true
     fi
@@ -209,6 +214,24 @@ EOF
             journalctl -u aegis-server -n 15 --no-pager
             exit 1
         fi
+
+    elif [ "$INIT_SYS" = "openrc" ]; then
+        cat <<EOF > /etc/init.d/aegis-server
+#!/sbin/openrc-run
+description="TianQue Aegis Probe Master Server"
+command="${srv_dir}/aegis_server"
+command_args="-port=${LISTEN_PORT}"
+command_background="yes"
+pidfile="/run/\${RC_SVCNAME}.pid"
+
+depend() {
+    need net
+    after firewall
+}
+EOF
+        chmod +x /etc/init.d/aegis-server
+        rc-update add aegis-server default 2>/dev/null || true
+        rc-service aegis-server restart || /etc/init.d/aegis-server restart
 
     elif [ "$INIT_SYS" = "openwrt" ]; then
         cat <<EOF > "${OPENWRT_INIT_DIR}/aegis-server"
@@ -290,6 +313,8 @@ install_agent() {
 
     if [ "$INIT_SYS" = "systemd" ]; then
         systemctl stop aegis-agent 2>/dev/null || true
+    elif [ "$INIT_SYS" = "openrc" ]; then
+        rc-service aegis-agent stop 2>/dev/null || true
     elif [ "$INIT_SYS" = "openwrt" ] && [ -f "${OPENWRT_INIT_DIR}/aegis-agent" ]; then
         ${OPENWRT_INIT_DIR}/aegis-agent stop 2>/dev/null || true
     fi
@@ -327,6 +352,24 @@ EOF
             journalctl -u aegis-agent -n 15 --no-pager
             exit 1
         fi
+
+    elif [ "$INIT_SYS" = "openrc" ]; then
+        cat <<EOF > /etc/init.d/aegis-agent
+#!/sbin/openrc-run
+description="TianQue Aegis Probe Agent"
+command="${agent_dir}/aegis_agent"
+command_args="-server=${server_url} -id=${node_id} -token=${node_token}"
+command_background="yes"
+pidfile="/run/\${RC_SVCNAME}.pid"
+
+depend() {
+    need net
+    after firewall
+}
+EOF
+        chmod +x /etc/init.d/aegis-agent
+        rc-update add aegis-agent default 2>/dev/null || true
+        rc-service aegis-agent restart || /etc/init.d/aegis-agent restart
 
     elif [ "$INIT_SYS" = "openwrt" ]; then
         cat <<EOF > "${OPENWRT_INIT_DIR}/aegis-agent"
@@ -366,6 +409,8 @@ view_server_status() {
     echo -e "${BLUE}==================== 服务运行状态 ====================${PLAIN}"
     if [ "$INIT_SYS" = "systemd" ]; then
         systemctl status aegis-server --no-pager || true
+    elif [ "$INIT_SYS" = "openrc" ]; then
+        rc-service aegis-server status 2>/dev/null || ps | grep aegis_server | grep -v grep || true
     elif [ "$INIT_SYS" = "openwrt" ]; then
         ps | grep aegis_server | grep -v grep || echo "服务未运行"
     fi
@@ -393,6 +438,13 @@ uninstall_all() {
             systemctl disable aegis-agent 2>/dev/null || true
             rm -f "${SYSTEMD_DIR}/aegis-agent.service"
             systemctl daemon-reload
+        elif [ "$INIT_SYS" = "openrc" ]; then
+            rc-service aegis-server stop 2>/dev/null || true
+            rc-update del aegis-server default 2>/dev/null || true
+            rm -f /etc/init.d/aegis-server
+            rc-service aegis-agent stop 2>/dev/null || true
+            rc-update del aegis-agent default 2>/dev/null || true
+            rm -f /etc/init.d/aegis-agent
         elif [ "$INIT_SYS" = "openwrt" ]; then
             ${OPENWRT_INIT_DIR}/aegis-server stop 2>/dev/null || true
             ${OPENWRT_INIT_DIR}/aegis-server disable 2>/dev/null || true

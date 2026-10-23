@@ -197,12 +197,17 @@
             </div>
           </td>
           <td>
-            <div style="display: flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 12px;">
-              <span>${escapeHtml(n.region || '自动识别')}</span>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              ${n.real_ip ? `
+                <code style="font-family: var(--font-mono); font-weight: 700; color: #0284c7; font-size: 13px;">${escapeHtml(n.real_ip)}</code>
+                <button class="btn-sm" style="padding: 1px 6px; font-size: 11px;" onclick="window.copyText('${escapeHtml(n.real_ip)}')" title="点击复制IP">📋</button>
+              ` : `
+                <span style="color: var(--text-muted); font-size: 12px;">${n.is_online ? '检测中...' : '--'}</span>
+              `}
             </div>
           </td>
           <td>
-            <span class="node-os-badge">${escapeHtml(n.os || 'Linux')}</span>
+            <span class="node-os-badge">${escapeHtml(n.real_os || n.os || 'Linux')}</span>
           </td>
           <td><span class="capsule capsule-days green">${escapeHtml(n.group || '默认')}</span></td>
           <td><span class="capsule capsule-price">${escapeHtml(n.price || '--')}</span></td>
@@ -315,12 +320,11 @@
   dom.nodeForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const regionCode = dom.nodeRegion.value.trim().toUpperCase();
-    const autoFlag = codeToFlag(regionCode);
 
     const payload = {
       id: dom.nodeId.value.trim(),
       name: dom.nodeName.value.trim(),
-      flag: autoFlag,
+      flag: regionCode,
       region: regionCode,
       os: 'linux', // 优先由 Agent 真实上报采集，无需手动写死
       group: dom.nodeGroup.value.trim(),
@@ -328,6 +332,13 @@
       expire_date: dom.nodeExpireDate.value.replace(/-/g, '/'),
       token: dom.nodeToken.value.trim()
     };
+
+    const submitBtn = dom.nodeForm.querySelector('button[type="submit"]');
+    const origText = submitBtn ? submitBtn.textContent : '确定保存';
+    if (submitBtn) {
+      submitBtn.textContent = '保存中...';
+      submitBtn.disabled = true;
+    }
 
     try {
       const res = await fetch('/api/admin/node/save', {
@@ -343,7 +354,12 @@
         alert('❌ 保存节点失败: ' + (data.error || ''));
       }
     } catch (err) {
-      alert('❌ 网络通信异常');
+      alert('❌ 网络通信异常: ' + (err.message || err));
+    } finally {
+      if (submitBtn) {
+        submitBtn.textContent = origText;
+        submitBtn.disabled = false;
+      }
     }
   });
 
@@ -388,19 +404,27 @@
   });
 
   dom.btnCopyCmd.addEventListener('click', () => {
-    const text = dom.cmdText.textContent;
-
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(() => {
-        dom.btnCopyCmd.textContent = '✅ 已复制！';
-        setTimeout(() => { dom.btnCopyCmd.textContent = '📋 复制命令'; }, 2000);
-      }).catch(() => fallbackCopy(text));
-    } else {
-      fallbackCopy(text);
-    }
+    window.copyText(dom.cmdText.textContent, dom.btnCopyCmd);
   });
 
-  function fallbackCopy(text) {
+  window.copyText = function (text, btnElem) {
+    if (!text) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        if (btnElem) {
+          const old = btnElem.textContent;
+          btnElem.textContent = '✅ 已复制！';
+          setTimeout(() => { btnElem.textContent = old; }, 2000);
+        } else {
+          alert('✅ 已成功复制到剪贴板: ' + text);
+        }
+      }).catch(() => fallbackCopy(text, btnElem));
+    } else {
+      fallbackCopy(text, btnElem);
+    }
+  };
+
+  function fallbackCopy(text, btnElem) {
     const ta = document.createElement('textarea');
     ta.value = text;
     ta.style.position = 'fixed';
@@ -411,10 +435,15 @@
     ta.select();
     try {
       document.execCommand('copy');
-      dom.btnCopyCmd.textContent = '✅ 已复制！';
-      setTimeout(() => { dom.btnCopyCmd.textContent = '📋 复制命令'; }, 2000);
+      if (btnElem) {
+        const old = btnElem.textContent;
+        btnElem.textContent = '✅ 已复制！';
+        setTimeout(() => { btnElem.textContent = old; }, 2000);
+      } else {
+        alert('✅ 已成功复制到剪贴板: ' + text);
+      }
     } catch (err) {
-      alert('复制失败，请手动长按选中文本复制');
+      alert('复制失败，请手动选中文本复制');
     }
     document.body.removeChild(ta);
   }

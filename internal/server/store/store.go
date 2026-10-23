@@ -67,6 +67,18 @@ func (s *Store) UpdateReport(nodeID string, metrics common.MetricsData) {
 	st.ConsecutiveHits++
 }
 
+// GetNodeRealInfo 获取节点的实时公网 IP、真实操作系统以及在线状态供后台管理展示
+func (s *Store) GetNodeRealInfo(nodeID string) (ip string, os string, isOnline bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	st, exists := s.states[nodeID]
+	if !exists {
+		return "", "", false
+	}
+	isOnline = time.Since(st.LastSeen) <= 60*time.Second
+	return st.LatestMetrics.PublicIP, st.LatestMetrics.OS, isOnline
+}
+
 // CheckHeartbeats 定时扫描节点心跳状态，触发掉线或上线恢复
 func (s *Store) CheckHeartbeats(nodes []common.NodeConfig, offlineThreshold time.Duration) {
 	s.mu.Lock()
