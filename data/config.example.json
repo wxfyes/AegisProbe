@@ -1,6 +1,6 @@
 {
   "listen_port": 8989,
-  "admin_password": "e2830af2532186b45638",
+  "admin_password": "admin",
   "access_mode": "public",
   "site_title": "天阙·神盾安全探针",
   "tg_enabled": false,
@@ -17,7 +17,7 @@
   "nodes": [
     {
       "id": "node_01",
-      "token": "ea3f2fb219d7207d439b730d11caed98",
+      "token": "example_token_01",
       "name": "香港-30M-122",
       "region": "HK",
       "flag": "🇭🇰",
@@ -29,7 +29,7 @@
     },
     {
       "id": "node_02",
-      "token": "d6d100e9f7254543343e64649e86e3aa",
+      "token": "example_token_02",
       "name": "台湾-Hinet",
       "region": "TW",
       "flag": "🇹🇼",
@@ -41,7 +41,7 @@
     },
     {
       "id": "node_03",
-      "token": "99317acbe1565e42efaaa7314002f180",
+      "token": "example_token_03",
       "name": "香港转发-225",
       "region": "HK",
       "flag": "🇭🇰",
