@@ -23,30 +23,42 @@
 
     <!-- 顶部全盘聚合状态看板 -->
     <section class="summary-strip">
-      <div class="summary-item">
+      <div class="summary-item summary-item-metric">
         <span class="summary-label">当前时间</span>
         <span class="summary-value" id="valCurrentTime">00:00:00</span>
       </div>
-      <div class="summary-item">
+      <div class="summary-item summary-item-metric">
         <span class="summary-label">当前在线</span>
         <span class="summary-value highlight" id="valOnlineRatio">0 / 0</span>
       </div>
-      <div class="summary-item">
+      <div class="summary-item summary-item-metric">
         <span class="summary-label">节点地区</span>
         <span class="summary-value" id="valRegionCount">0</span>
       </div>
-      <div class="summary-item">
+      <div class="summary-item summary-item-pill">
         <span class="summary-label">流量概览</span>
-        <div class="summary-sub-val">
-          <span class="up" id="valTrafficUp">↑ 0 B</span>
-          <span class="down" id="valTrafficDown">↓ 0 B</span>
+        <div class="summary-pill-group">
+          <div class="summary-pill up">
+            <span class="pill-header">总上行 ↑</span>
+            <span class="pill-value" id="valTrafficUp">0 B</span>
+          </div>
+          <div class="summary-pill down">
+            <span class="pill-header">总下行 ↓</span>
+            <span class="pill-value" id="valTrafficDown">0 B</span>
+          </div>
         </div>
       </div>
-      <div class="summary-item">
+      <div class="summary-item summary-item-pill">
         <span class="summary-label">网络速率</span>
-        <div class="summary-sub-val">
-          <span class="up" id="valSpeedUp">↑ 0 B/s</span>
-          <span class="down" id="valSpeedDown">↓ 0 B/s</span>
+        <div class="summary-pill-group">
+          <div class="summary-pill up">
+            <span class="pill-header">实时 ↑</span>
+            <span class="pill-value" id="valSpeedUp">0 B/s</span>
+          </div>
+          <div class="summary-pill down">
+            <span class="pill-header">实时 ↓</span>
+            <span class="pill-value" id="valSpeedDown">0 B/s</span>
+          </div>
         </div>
       </div>
     </section>

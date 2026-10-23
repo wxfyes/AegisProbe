@@ -170,6 +170,8 @@
     dom.cfgTGProxy.value = cfg.tg_proxy || '';
   }
 
+  let draggedRow = null;
+
   function renderNodesTable(nodes) {
     const keyword = (dom.nodeSearchInput.value || '').trim().toLowerCase();
     const filtered = nodes.filter(n => {
@@ -181,14 +183,17 @@
     });
 
     if (filtered.length === 0) {
-      dom.nodeTableBody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 30px;">暂无匹配的服务器节点</td></tr>`;
+      dom.nodeTableBody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 30px;">暂无匹配的服务器节点</td></tr>`;
       return;
     }
 
     dom.nodeTableBody.innerHTML = filtered.map(n => {
       const flagHtml = getFlagSVG(n.flag || n.region, n.name);
       return `
-        <tr>
+        <tr draggable="true" data-id="${escapeHtml(n.id)}">
+          <td style="text-align: center; width: 44px;">
+            <span class="drag-handle" title="按住拖拽排序">≡</span>
+          </td>
           <td><code style="color: var(--accent-blue); font-weight: 700;">${escapeHtml(n.id)}</code></td>
           <td>
             <div style="display: flex; align-items: center; gap: 8px;">
@@ -222,6 +227,72 @@
         </tr>
       `;
     }).join('');
+  }
+
+  // 绑定原生拖拽排序事件 (零依赖，丝滑流畅，支持即拖即存)
+  function initDragAndDrop() {
+    const tbody = dom.nodeTableBody;
+
+    tbody.addEventListener('dragstart', (e) => {
+      const tr = e.target.closest('tr');
+      if (!tr) return;
+      draggedRow = tr;
+      tr.classList.add('dragging');
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', tr.dataset.id || '');
+      }
+    });
+
+    tbody.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      if (e.dataTransfer) {
+        e.dataTransfer.dropEffect = 'move';
+      }
+      if (!draggedRow) return;
+
+      const targetTr = e.target.closest('tr');
+      if (!targetTr || targetTr === draggedRow) return;
+
+      const rect = targetTr.getBoundingClientRect();
+      const isAfter = (e.clientY - rect.top) > (rect.height / 2);
+      if (isAfter) {
+        tbody.insertBefore(draggedRow, targetTr.nextSibling);
+      } else {
+        tbody.insertBefore(draggedRow, targetTr);
+      }
+    });
+
+    tbody.addEventListener('dragend', async () => {
+      if (!draggedRow) return;
+      draggedRow.classList.remove('dragging');
+      draggedRow = null;
+
+      // 提取排序后的 ID 序列
+      const rows = Array.from(tbody.querySelectorAll('tr[data-id]'));
+      const newOrder = rows.map(r => r.dataset.id).filter(Boolean);
+      if (newOrder.length === 0) return;
+
+      // 同步本地 allNodes 顺序
+      const nodeMap = new Map(allNodes.map(n => [n.id, n]));
+      allNodes = newOrder.map(id => nodeMap.get(id)).filter(Boolean);
+
+      try {
+        const res = await fetch('/api/admin/node/reorder', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ node_ids: newOrder })
+        });
+        const data = await res.json();
+        if (res.ok && data.ok) {
+          showToast('✅ 节点排列顺序已实时保存！', 'success');
+        } else {
+          showToast('❌ 保存排序失败: ' + (data.error || '未知错误'), 'error');
+        }
+      } catch (err) {
+        showToast('❌ 保存排序异常，请检查网络', 'error');
+      }
+    });
   }
 
   // 搜索框输入过滤
@@ -349,6 +420,7 @@
       const data = await res.json();
       if (res.ok && data.ok) {
         dom.nodeModal.style.display = 'none';
+        showToast('✅ 节点已成功保存！', 'success');
         loadAdminConfig();
       } else {
         alert('❌ 保存节点失败: ' + (data.error || ''));
@@ -455,6 +527,36 @@
     })[m]);
   }
 
-  // 初始化加载
+  function showToast(msg, type = 'info') {
+    let toast = document.getElementById('adminToast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'adminToast';
+      toast.style.position = 'fixed';
+      toast.style.bottom = '24px';
+      toast.style.right = '24px';
+      toast.style.padding = '10px 18px';
+      toast.style.borderRadius = '8px';
+      toast.style.color = '#fff';
+      toast.style.fontSize = '13px';
+      toast.style.fontWeight = '700';
+      toast.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+      toast.style.zIndex = '99999';
+      toast.style.transition = 'opacity 0.25s ease';
+      document.body.appendChild(toast);
+    }
+    toast.style.background = type === 'error' ? '#dc2626' : (type === 'success' ? '#16a34a' : '#2563eb');
+    toast.textContent = msg;
+    toast.style.opacity = '1';
+    toast.style.display = 'block';
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(() => {
+      toast.style.opacity = '0';
+      setTimeout(() => { toast.style.display = 'none'; }, 250);
+    }, 2000);
+  }
+
+  // 初始化加载与事件绑定
+  initDragAndDrop();
   loadAdminConfig();
 })();

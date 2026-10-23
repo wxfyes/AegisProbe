@@ -48,6 +48,7 @@ func (h *RouterHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/admin/config", h.adminRequireAuth(h.handleAdminConfig))
 	mux.HandleFunc("/api/admin/node/save", h.adminRequireAuth(h.handleAdminNodeSave))
 	mux.HandleFunc("/api/admin/node/delete", h.adminRequireAuth(h.handleAdminNodeDelete))
+	mux.HandleFunc("/api/admin/node/reorder", h.adminRequireAuth(h.handleAdminNodeReorder))
 	mux.HandleFunc("/api/admin/agent_install_cmd", h.adminRequireAuth(h.handleAdminInstallCmd))
 	mux.HandleFunc("/api/admin/test_tg", h.adminRequireAuth(h.handleAdminTestTG))
 
@@ -345,6 +346,29 @@ func (h *RouterHandler) handleAdminNodeDelete(w http.ResponseWriter, r *http.Req
 	}
 
 	if err := h.cfgMgr.DeleteNode(req.ID); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// handleAdminNodeReorder 调整节点排列顺序并持久化
+func (h *RouterHandler) handleAdminNodeReorder(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		NodeIDs []string `json:"node_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid body", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.cfgMgr.ReorderNodes(req.NodeIDs); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}

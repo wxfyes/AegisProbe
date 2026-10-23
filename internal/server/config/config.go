@@ -245,6 +245,36 @@ func (m *Manager) DeleteNode(id string) error {
 	return m.saveLocked()
 }
 
+// ReorderNodes 根据传入的节点ID列表重排所有节点的持久化展示顺序
+func (m *Manager) ReorderNodes(nodeIDs []string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	nodeMap := make(map[string]common.NodeConfig, len(m.cfg.Nodes))
+	for _, n := range m.cfg.Nodes {
+		nodeMap[n.ID] = n
+	}
+
+	var orderedNodes []common.NodeConfig
+	seen := make(map[string]bool)
+	for _, id := range nodeIDs {
+		if n, ok := nodeMap[id]; ok && !seen[id] {
+			orderedNodes = append(orderedNodes, n)
+			seen[id] = true
+		}
+	}
+
+	// 补全任何未在传入列表中的遗留节点
+	for _, n := range m.cfg.Nodes {
+		if !seen[n.ID] {
+			orderedNodes = append(orderedNodes, n)
+		}
+	}
+
+	m.cfg.Nodes = orderedNodes
+	return m.saveLocked()
+}
+
 func generateRandomSecret(length int) string {
 	bytes := make([]byte, length)
 	if _, err := rand.Read(bytes); err != nil {

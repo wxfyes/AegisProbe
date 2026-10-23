@@ -123,9 +123,10 @@ body {
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: 12px;
-  padding: 16px 24px;
+  padding: 16px 20px;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: 1fr 1fr 1fr 1.8fr 1.8fr;
+  align-items: center;
   gap: 16px;
   margin-bottom: 20px;
 }
@@ -135,11 +136,15 @@ body {
   flex-direction: column;
 }
 
+.summary-item-metric {
+  justify-content: center;
+}
+
 .summary-label {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-sub);
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 
 .summary-value {
@@ -148,6 +153,7 @@ body {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--text-main);
+  line-height: 1.2;
 }
 
 .summary-value.highlight {
@@ -157,18 +163,85 @@ body {
   color: #38bdf8;
 }
 
-.summary-sub-val {
-  font-size: 13px;
+/* 顶部流量与速率双胶囊微仪表盘 (与卡片风格呼应，高大上) */
+.summary-item-pill .summary-pill-group {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.summary-pill {
+  background: var(--card-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.summary-pill.up {
+  border-left: 3px solid #10b981;
+}
+
+.summary-pill.down {
+  border-left: 3px solid #0284c7;
+}
+
+[data-theme="light"] .summary-pill.up {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  border-left: 3px solid #10b981;
+}
+
+[data-theme="light"] .summary-pill.down {
+  background: #f0f9ff;
+  border-color: #bae6fd;
+  border-left: 3px solid #0284c7;
+}
+
+[data-theme="dark"] .summary-pill.up {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.25);
+  border-left: 3px solid #10b981;
+}
+
+[data-theme="dark"] .summary-pill.down {
+  background: rgba(2, 132, 199, 0.1);
+  border-color: rgba(2, 132, 199, 0.25);
+  border-left: 3px solid #0284c7;
+}
+
+.summary-pill .pill-header {
+  font-size: 11px;
   font-weight: 700;
+  display: block;
+  margin-bottom: 2px;
+}
+
+.summary-pill.up .pill-header {
+  color: #059669;
+}
+[data-theme="dark"] .summary-pill.up .pill-header {
+  color: #34d399;
+}
+
+.summary-pill.down .pill-header {
+  color: #2563eb;
+}
+[data-theme="dark"] .summary-pill.down .pill-header {
+  color: #38bdf8;
+}
+
+.summary-pill .pill-value {
+  font-size: 14px;
+  font-weight: 800;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--text-main);
-  display: flex;
-  gap: 10px;
+  white-space: nowrap;
+  line-height: 1.2;
 }
-
-.summary-sub-val .up { color: #059669; }
-.summary-sub-val .down { color: #2563eb; }
 
 /* 分组过滤器 */
 .filter-bar {
@@ -659,4 +732,111 @@ body {
   font-size: 12px;
   margin-top: 8px;
   min-height: 18px;
+}
+
+/* =================================================================
+   移动端与手机端深度响应式适配 (Mobile Responsiveness)
+   ================================================================= */
+@media (max-width: 960px) {
+  .summary-strip {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .summary-item-pill {
+    grid-column: span 1.5;
+  }
+}
+
+@media (max-width: 768px) {
+  .container {
+    padding: 12px 12px;
+  }
+
+  .header {
+    margin-bottom: 16px;
+    padding: 0 4px;
+  }
+
+  .brand .title {
+    font-size: 17px;
+  }
+
+  .summary-strip {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px 10px;
+    padding: 14px 12px;
+    border-radius: 10px;
+    margin-bottom: 16px;
+  }
+
+  .summary-item-metric .summary-label {
+    font-size: 11px;
+    margin-bottom: 4px;
+  }
+
+  .summary-item-metric .summary-value {
+    font-size: 16px;
+  }
+
+  /* 流量概览与网络速率在手机端各独占一行，微药丸平分宽度舒展展示 */
+  .summary-item-pill {
+    grid-column: 1 / -1;
+  }
+
+  .summary-item-pill .summary-label {
+    font-size: 11px;
+    margin-bottom: 4px;
+  }
+
+  .summary-pill-group {
+    gap: 8px;
+  }
+
+  .summary-pill {
+    padding: 6px 10px;
+  }
+
+  .summary-pill .pill-header {
+    font-size: 10px;
+  }
+
+  .summary-pill .pill-value {
+    font-size: 13px;
+  }
+
+  /* 节点卡片在移动端单列充满，阅读极为舒适 */
+  .node-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .node-card {
+    padding: 14px 12px;
+    border-radius: 10px;
+  }
+
+  .card-header .node-title {
+    font-size: 14px;
+  }
+
+  .speed-pill-group {
+    gap: 8px;
+  }
+
+  .speed-pill {
+    padding: 6px 10px;
+  }
+
+  .speed-pill .pill-value {
+    font-size: 13.5px;
+  }
+
+  .card-details {
+    font-size: 11.5px;
+  }
+
+  .modal-box {
+    width: 92%;
+    max-width: 380px;
+    padding: 24px 18px;
+  }
 }

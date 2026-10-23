@@ -117,11 +117,21 @@
     if (s) {
       dom.valCurrentTime.textContent = s.current_time;
       dom.valOnlineRatio.textContent = `${s.online_count} / ${s.total_count}`;
-      dom.valRegionCount.textContent = s.region_count;
-      dom.valTrafficUp.textContent = `↑ ${formatBytes(s.total_net_out_bytes)}`;
-      dom.valTrafficDown.textContent = `↓ ${formatBytes(s.total_net_in_bytes)}`;
-      dom.valSpeedUp.textContent = `↑ ${formatSpeed(s.instant_speed_out)}`;
-      dom.valSpeedDown.textContent = `↓ ${formatSpeed(s.instant_speed_in)}`;
+
+      // 智能去重准确统计地区数量（优先根据节点真实地区/名称智能提取）
+      const regionSet = new Set();
+      (data.nodes || []).forEach(n => {
+        const code = getRegionCode(n.name, n.region);
+        if (code && code !== 'UN') {
+          regionSet.add(code);
+        }
+      });
+      dom.valRegionCount.textContent = regionSet.size > 0 ? regionSet.size : (s.region_count || 0);
+
+      dom.valTrafficUp.textContent = formatBytes(s.total_net_out_bytes);
+      dom.valTrafficDown.textContent = formatBytes(s.total_net_in_bytes);
+      dom.valSpeedUp.textContent = formatSpeed(s.instant_speed_out);
+      dom.valSpeedDown.textContent = formatSpeed(s.instant_speed_in);
     }
 
     // 分组按钮
