@@ -61,22 +61,50 @@ detect_init_sys() {
     fi
 }
 
-# 检查端口是否被占用
-check_port() {
+# 强制释放端口 —— 获取精准 PID 后直接 kill -9，并验证端口已释放
+force_free_port() {
     local port="$1"
     local pid=""
+
+    # 三种工具轮询获取占用端口的 PID
     if command -v lsof >/dev/null 2>&1; then
         pid=$(lsof -ti :"$port" 2>/dev/null || true)
     elif command -v ss >/dev/null 2>&1; then
-        pid=$(ss -tlnp "sport = :$port" 2>/dev/null | grep -o 'pid=[0-9]*' | cut -d= -f2 || true)
+        pid=$(ss -tlnp "sport = :$port" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1 || true)
     elif command -v netstat >/dev/null 2>&1; then
-        pid=$(netstat -tlnp 2>/dev/null | grep ":$port " | awk '{print $7}' | cut -d/ -f1 || true)
+        pid=$(netstat -tlnp 2>/dev/null | grep ":$port " | awk '{print $7}' | cut -d/ -f1 | head -1 || true)
     fi
 
     if [ -n "$pid" ]; then
-        echo -e "${YELLOW}⚠️ 警告: 端口 ${port} 目前已被进程 (PID: ${pid}) 占用！${PLAIN}"
-        echo -e "${YELLOW}请先排查占用程序，或使用 --port=其他端口 参数安装。${PLAIN}"
+        echo -e "${YELLOW}⚠️ 端口 ${port} 被 PID ${pid} 占用，正在强制击杀...${PLAIN}"
+        kill -9 $pid 2>/dev/null || true
+        sleep 1
     fi
+
+    # 兜底：fuser 强制释放
+    if command -v fuser >/dev/null 2>&1; then
+        fuser -k "${port}/tcp" 2>/dev/null || true
+    fi
+
+    # 验证端口是否已释放（最多等 3 秒）
+    local tries=0
+    while [ $tries -lt 3 ]; do
+        local still_pid=""
+        if command -v lsof >/dev/null 2>&1; then
+            still_pid=$(lsof -ti :"$port" 2>/dev/null || true)
+        elif command -v ss >/dev/null 2>&1; then
+            still_pid=$(ss -tlnp "sport = :$port" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1 || true)
+        fi
+        if [ -z "$still_pid" ]; then
+            echo -e "${GREEN}✓ 端口 ${port} 已成功释放${PLAIN}"
+            return 0
+        fi
+        sleep 1
+        tries=$((tries + 1))
+    done
+
+    echo -e "${RED}❌ 端口 ${port} 仍被占用，无法继续安装！请手动执行: kill -9 \$(lsof -ti :${port})${PLAIN}"
+    exit 1
 }
 
 # 智能高速下载函数 (带 GitHub 镜像加速 fallback)
@@ -118,8 +146,6 @@ install_master() {
         echo -e "${YELLOW}⚠️ 当前机器架构为 ${GOARCH}，服务端官方二进制建议在 Linux amd64 运行。${PLAIN}"
     fi
 
-    check_port "$LISTEN_PORT"
-
     local bin_name="aegis_server_linux_amd64"
     local srv_dir="${INSTALL_DIR}/server"
     mkdir -p "${srv_dir}/data"
@@ -129,31 +155,21 @@ install_master() {
     echo -e "${BLUE}运行环境: ${INIT_SYS} | 机器架构: ${GOARCH} | 监听端口: ${LISTEN_PORT}${PLAIN}"
     echo -e "${BLUE}=================================================================${PLAIN}"
 
-    # 停止旧服务并清理可能残留的孤儿进程（双重保险）
+    # 第一步：停止 systemd 服务（兼容新旧服务名）
     if [ "$INIT_SYS" = "systemd" ]; then
         systemctl stop aegis-server 2>/dev/null || true
-        systemctl stop tianque-probe 2>/dev/null || true   # 兼容旧服务名
+        systemctl stop tianque-probe 2>/dev/null || true
     elif [ "$INIT_SYS" = "openwrt" ] && [ -f "${OPENWRT_INIT_DIR}/aegis-server" ]; then
         ${OPENWRT_INIT_DIR}/aegis-server stop 2>/dev/null || true
     fi
-    # 强杀残留进程（防止 systemctl stop 未完全终止）
+
+    # 第二步：按进程名强杀残留
     pkill -9 -x aegis_server 2>/dev/null || true
     killall -9 aegis_server 2>/dev/null || true
     sleep 1
 
-    # 端口仍被占用时强行释放（ss/fuser/lsof 三重兜底）
-    if command -v fuser >/dev/null 2>&1; then
-        fuser -k "${LISTEN_PORT}/tcp" 2>/dev/null || true
-    elif command -v ss >/dev/null 2>&1; then
-        local _pid
-        _pid=$(ss -tlnp "sport = :${LISTEN_PORT}" 2>/dev/null | grep -oP 'pid=\K[0-9]+' || true)
-        [ -n "$_pid" ] && kill -9 "$_pid" 2>/dev/null || true
-    elif command -v lsof >/dev/null 2>&1; then
-        local _pid
-        _pid=$(lsof -ti :"${LISTEN_PORT}" 2>/dev/null || true)
-        [ -n "$_pid" ] && kill -9 "$_pid" 2>/dev/null || true
-    fi
-    sleep 1
+    # 第三步：按端口精准击杀 + 验证端口已释放（不释放则退出）
+    force_free_port "$LISTEN_PORT"
 
     # 仅下载当前架构的服务端二进制，绝不下载任何其他架构或多余文件
     download_file "$bin_name" "${srv_dir}/aegis_server"
