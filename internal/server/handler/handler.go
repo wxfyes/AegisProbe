@@ -118,6 +118,15 @@ func (h *RouterHandler) handleReport(w http.ResponseWriter, r *http.Request) {
 	if payload.Metrics.PublicIP == "" {
 		payload.Metrics.PublicIP = clientIP
 	}
+	if strings.Contains(clientIP, ":") {
+		if payload.Metrics.IPv6 == "" {
+			payload.Metrics.IPv6 = clientIP
+		}
+	} else if strings.Contains(clientIP, ".") {
+		if payload.Metrics.IPv4 == "" {
+			payload.Metrics.IPv4 = clientIP
+		}
+	}
 
 	// 更新内存状态 (绝对不生成或返回任何反向下行指令)
 	h.store.UpdateReport(payload.NodeID, payload.Metrics)
@@ -238,33 +247,43 @@ func (h *RouterHandler) handleAdminConfig(w http.ResponseWriter, r *http.Request
 		type AdminNodeView struct {
 			common.NodeConfig
 			RealIP   string `json:"real_ip"`
+			IPv4     string `json:"ipv4"`
+			IPv6     string `json:"ipv6"`
 			RealOS   string `json:"real_os"`
 			IsOnline bool   `json:"is_online"`
 		}
 
 		adminNodes := make([]AdminNodeView, 0, len(cfg.Nodes))
 		for _, n := range cfg.Nodes {
-			ip, osName, isOnline := h.store.GetNodeRealInfo(n.ID)
+			ipv4, ipv6, osName, isOnline := h.store.GetNodeRealInfo(n.ID)
+			realIP := ipv4
+			if realIP == "" {
+				realIP = ipv6
+			}
 			adminNodes = append(adminNodes, AdminNodeView{
 				NodeConfig: n,
-				RealIP:     ip,
+				RealIP:     realIP,
+				IPv4:       ipv4,
+				IPv6:       ipv6,
 				RealOS:     osName,
 				IsOnline:   isOnline,
 			})
 		}
 
 		resp := map[string]interface{}{
-			"site_title":     cfg.SiteTitle,
-			"access_mode":    cfg.AccessMode,
-			"listen_port":    cfg.ListenPort,
-			"offline_sec":    cfg.OfflineSec,
-			"warn_days":      cfg.WarnDays,
-			"tg_enabled":     cfg.TGEnabled,
-			"tg_bot_token":   cfg.TGBotToken,
-			"tg_chat_id":     cfg.TGChatID,
-			"tg_proxy":       cfg.TGProxy,
-			"admin_password": "******",
-			"nodes":          adminNodes,
+			"site_title":         cfg.SiteTitle,
+			"access_mode":        cfg.AccessMode,
+			"listen_port":        cfg.ListenPort,
+			"offline_sec":        cfg.OfflineSec,
+			"warn_days":          cfg.WarnDays,
+			"tg_enabled":         cfg.TGEnabled,
+			"tg_bot_token":       cfg.TGBotToken,
+			"tg_chat_id":         cfg.TGChatID,
+			"tg_proxy":           cfg.TGProxy,
+			"gfw_check_url":      cfg.GFWCheckURL,
+			"gfw_check_interval": cfg.GFWCheckInterval,
+			"admin_password":     "******",
+			"nodes":              adminNodes,
 		}
 		writeJSON(w, http.StatusOK, resp)
 		return
@@ -272,15 +291,17 @@ func (h *RouterHandler) handleAdminConfig(w http.ResponseWriter, r *http.Request
 
 	if r.Method == http.MethodPost {
 		var req struct {
-			SiteTitle     string `json:"site_title"`
-			AdminPassword string `json:"admin_password"`
-			AccessMode    string `json:"access_mode"`
-			ListenPort    int    `json:"listen_port"`
-			OfflineSec    int    `json:"offline_sec"`
-			TGEnabled     bool   `json:"tg_enabled"`
-			TGBotToken    string `json:"tg_bot_token"`
-			TGChatID      string `json:"tg_chat_id"`
-			TGProxy       string `json:"tg_proxy"`
+			SiteTitle        string `json:"site_title"`
+			AdminPassword    string `json:"admin_password"`
+			AccessMode       string `json:"access_mode"`
+			ListenPort       int    `json:"listen_port"`
+			OfflineSec       int    `json:"offline_sec"`
+			TGEnabled        bool   `json:"tg_enabled"`
+			TGBotToken       string `json:"tg_bot_token"`
+			TGChatID         string `json:"tg_chat_id"`
+			TGProxy          string `json:"tg_proxy"`
+			GFWCheckURL      string `json:"gfw_check_url"`
+			GFWCheckInterval int    `json:"gfw_check_interval"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "Invalid body", http.StatusBadRequest)
@@ -296,6 +317,7 @@ func (h *RouterHandler) handleAdminConfig(w http.ResponseWriter, r *http.Request
 		if err := h.cfgMgr.UpdateSettings(
 			req.SiteTitle, pwd, req.AccessMode, req.ListenPort, req.OfflineSec,
 			req.TGEnabled, req.TGBotToken, req.TGChatID, req.TGProxy,
+			req.GFWCheckURL, req.GFWCheckInterval,
 		); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return

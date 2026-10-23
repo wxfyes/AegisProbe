@@ -14,6 +14,7 @@ import (
 
 	"tianque_probe/internal/server/auth"
 	"tianque_probe/internal/server/config"
+	"tianque_probe/internal/server/gfw"
 	"tianque_probe/internal/server/handler"
 	"tianque_probe/internal/server/notify"
 	"tianque_probe/internal/server/store"
@@ -64,6 +65,10 @@ func main() {
 
 	// 启动 Telegram 异步发送队列消费循环
 	go notifier.Start(ctx)
+
+	// 启动国内连通性 (是否被墙) 异步测活巡检引擎
+	gfwChecker := gfw.NewChecker(cfgMgr, st)
+	gfwChecker.Start(ctx)
 
 	// 启动后台心跳扫描协程 (每 10 秒巡检一次)
 	go func() {

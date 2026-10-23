@@ -437,6 +437,19 @@
               <input type="text" id="cfgTGProxy" class="form-input" placeholder="例如 socks5://127.0.0.1:10808 或 http://127.0.0.1:7890">
             </div>
 
+            <hr style="border: 0; border-top: 1px solid var(--panel-border); margin: 20px 0;">
+
+            <div style="font-size: 14px; font-weight: 700; color: var(--text-main); margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
+              <span>🛡️</span>
+              <span>国内连通性 (是否被墙) 自动测活设置</span>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">外部测活 API URL 模板 (支持 {ip} 和 {port} 占位符)</label>
+              <input type="text" id="cfgGFWCheckURL" class="form-input" placeholder="例如 https://v2.xxapi.cn/api/tcping?address={ip}&port={port}">
+              <div style="font-size: 11.5px; color: var(--text-sub); margin-top: 4px;">留空表示关闭国内测活。配置后大屏卡片右上角将实时展示「✓ 畅通」或「✕ 被墙」</div>
+            </div>
+
             <div style="display: flex; gap: 12px; margin-top: 20px;">
               <button type="submit" class="btn-primary" style="width: auto; padding: 10px 24px;">保存系统配置</button>
               <button type="button" id="btnTestTG" class="btn-sm" style="padding: 10px 18px;">🔔 发送 TG 测试消息</button>
@@ -507,9 +520,15 @@
           </div>
         </div>
 
-        <div class="form-group">
-          <label class="form-label">认证 Token (留空由服务端自动生成)</label>
-          <input type="text" id="nodeToken" class="form-input" placeholder="留空自动生成安全随机Token">
+        <div class="grid-2">
+          <div class="form-group">
+            <label class="form-label">认证 Token (留空自动生成)</label>
+            <input type="text" id="nodeToken" class="form-input" placeholder="留空自动生成安全随机Token">
+          </div>
+          <div class="form-group">
+            <label class="form-label">测活探测端口 (留空默认 22)</label>
+            <input type="number" id="nodeProbePort" class="form-input" placeholder="22">
+          </div>
         </div>
 
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">

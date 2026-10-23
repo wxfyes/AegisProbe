@@ -218,6 +218,7 @@
               <span class="node-name" title="${escapeHtml(node.name)}">${escapeHtml(node.name)}</span>
               <span class="node-os-badge">${formatOSBadge(node.os)}</span>
             </div>
+            ${renderGFWBadge(node.gfw_status)}
           </div>
 
           <div class="card-capsules">
@@ -295,6 +296,20 @@
         if (flagSpan) flagSpan.innerHTML = getFlagSVG(node.flag || node.region, node.name);
         const osBadge = card.querySelector('.node-os-badge');
         if (osBadge) osBadge.textContent = formatOSBadge(node.os);
+
+        // GFW 测活状态徽章更新
+        const header = card.querySelector('.card-header');
+        if (header) {
+          const badgePlaceholder = header.querySelector('.gfw-badge, .gfw-badge-placeholder');
+          const targetHtml = renderGFWBadge(node.gfw_status);
+          if (badgePlaceholder) {
+            if (badgePlaceholder.outerHTML !== targetHtml) {
+              badgePlaceholder.outerHTML = targetHtml;
+            }
+          } else {
+            header.insertAdjacentHTML('beforeend', targetHtml);
+          }
+        }
 
         // 胶囊更新
         const capDays = card.querySelector('.capsule-days');
@@ -426,6 +441,17 @@
     if (os.includes('windows')) return '🪟 Windows';
     if (os.includes('openwrt')) return 'OpenWrt';
     return os.charAt(0).toUpperCase() + os.slice(1);
+  }
+
+  function renderGFWBadge(status) {
+    if (!status) return '<span class="gfw-badge-placeholder"></span>';
+    if (status === 'ok') {
+      return '<span class="gfw-badge ok" title="国内连通性：TCP连通畅通">✓ 畅通</span>';
+    }
+    if (status === 'blocked') {
+      return '<span class="gfw-badge blocked" title="国内连通性：被墙或阻断超时">✕ 被墙</span>';
+    }
+    return '<span class="gfw-badge-placeholder"></span>';
   }
 
   function escapeHtml(str) {

@@ -11,6 +11,10 @@ Write-Host "Starting TianQue-Probe Full Cross-Architecture Compilation..." -Fore
 Write-Host "=================================================================" -ForegroundColor Cyan
 
 $distDir = "release_bins"
+$binDir = "bin"
+if (-not (Test-Path $binDir)) {
+    New-Item -ItemType Directory -Path $binDir -Force | Out-Null
+}
 if (Test-Path $distDir) {
     Remove-Item -Path $distDir -Recurse -Force
 }
@@ -22,33 +26,39 @@ $env:CGO_ENABLED = "0"
 Write-Host "[1/6] Building Server (Linux amd64)..." -ForegroundColor Yellow
 $env:GOOS = "linux"
 $env:GOARCH = "amd64"
-go build -ldflags "-s -w" -o "$distDir/aegis_server_linux_amd64" ./cmd/server
+go build -ldflags "-s -w" -o "$binDir/aegis_server_linux_amd64" ./cmd/server
+Copy-Item "$binDir/aegis_server_linux_amd64" "$distDir/aegis_server_linux_amd64" -Force
 
 Write-Host "[2/6] Building Server (Windows amd64)..." -ForegroundColor Yellow
 $env:GOOS = "windows"
 $env:GOARCH = "amd64"
-go build -ldflags "-s -w" -o "$distDir/aegis_server_windows_amd64.exe" ./cmd/server
+go build -ldflags "-s -w" -o "$binDir/aegis_server_windows_amd64.exe" ./cmd/server
+Copy-Item "$binDir/aegis_server_windows_amd64.exe" "$distDir/aegis_server_windows_amd64.exe" -Force
 
 # 2. Agent Build
 Write-Host "[3/6] Building Agent (Linux amd64)..." -ForegroundColor Yellow
 $env:GOOS = "linux"
 $env:GOARCH = "amd64"
-go build -ldflags "-s -w" -o "$distDir/downloads/aegis_agent_linux_amd64" ./cmd/agent
+go build -ldflags "-s -w" -o "$binDir/aegis_agent_linux_amd64" ./cmd/agent
+Copy-Item "$binDir/aegis_agent_linux_amd64" "$distDir/downloads/aegis_agent_linux_amd64" -Force
 
 Write-Host "[4/6] Building Agent (Linux arm64)..." -ForegroundColor Yellow
 $env:GOOS = "linux"
 $env:GOARCH = "arm64"
-go build -ldflags "-s -w" -o "$distDir/downloads/aegis_agent_linux_arm64" ./cmd/agent
+go build -ldflags "-s -w" -o "$binDir/aegis_agent_linux_arm64" ./cmd/agent
+Copy-Item "$binDir/aegis_agent_linux_arm64" "$distDir/downloads/aegis_agent_linux_arm64" -Force
 
 Write-Host "[5/6] Building Agent (Linux 386)..." -ForegroundColor Yellow
 $env:GOOS = "linux"
 $env:GOARCH = "386"
-go build -ldflags "-s -w" -o "$distDir/downloads/aegis_agent_linux_386" ./cmd/agent
+go build -ldflags "-s -w" -o "$binDir/aegis_agent_linux_386" ./cmd/agent
+Copy-Item "$binDir/aegis_agent_linux_386" "$distDir/downloads/aegis_agent_linux_386" -Force
 
 Write-Host "[6/6] Building Agent (Windows amd64)..." -ForegroundColor Yellow
 $env:GOOS = "windows"
 $env:GOARCH = "amd64"
-go build -ldflags "-s -w" -o "$distDir/downloads/aegis_agent_windows_amd64.exe" ./cmd/agent
+go build -ldflags "-s -w" -o "$binDir/aegis_agent_windows_amd64.exe" ./cmd/agent
+Copy-Item "$binDir/aegis_agent_windows_amd64.exe" "$distDir/downloads/aegis_agent_windows_amd64.exe" -Force
 
 # Restore environment
 $env:GOOS = "windows"

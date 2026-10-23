@@ -3,7 +3,9 @@
 package collector
 
 import (
+	"net"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 	"unsafe"
@@ -146,6 +148,8 @@ func (c *WindowsCollector) Collect() (*common.MetricsData, error) {
 
 	c.lastSample = now
 
+	v4, v6 := detectWindowsPublicIPs()
+
 	return &common.MetricsData{
 		CPUPercent:    cpuPercent,
 		MemoryUsed:    memUsed,
@@ -165,5 +169,47 @@ func (c *WindowsCollector) Collect() (*common.MetricsData, error) {
 		CPUCores:      runtime.NumCPU(),
 		Arch:          runtime.GOARCH,
 		OS:            "windows",
+		PublicIP:      v4,
+		IPv4:          v4,
+		IPv6:          v6,
 	}, nil
+}
+
+func detectWindowsPublicIPs() (ipv4 string, ipv6 string) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return "", ""
+	}
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if ip == nil || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
+				continue
+			}
+			if ip4 := ip.To4(); ip4 != nil {
+				if !ip4.IsPrivate() && ipv4 == "" {
+					ipv4 = ip4.String()
+				}
+			} else if ip.To16() != nil {
+				str := ip.String()
+				if ip.IsGlobalUnicast() && !strings.HasPrefix(str, "fc") && !strings.HasPrefix(str, "fd") && ipv6 == "" {
+					ipv6 = str
+				}
+			}
+		}
+	}
+	return ipv4, ipv6
 }

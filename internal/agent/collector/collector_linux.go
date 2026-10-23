@@ -5,6 +5,8 @@ package collector
 import (
 	"bufio"
 	"encoding/json"
+	"io"
+	"net"
 	"net/http"
 	"os"
 	"runtime"
@@ -24,6 +26,8 @@ type LinuxCollector struct {
 	lastSample    time.Time
 	cachedOS      string
 	cachedIP      string
+	cachedIPv4    string
+	cachedIPv6    string
 	cachedCountry string
 	lastGeoCheck  time.Time
 }
@@ -261,11 +265,21 @@ func (c *LinuxCollector) Collect() (*common.MetricsData, error) {
 
 	c.lastSample = now
 
-	// 异步轻量探测公网 IP 与国家代码 (每小时或初次触发一次)
+	// 1. 本地网卡扫描全局单播双栈 IP (毫秒级，不耗外网流量)
+	v4, v6 := detectLocalPublicIPs()
+	if v4 != "" {
+		c.cachedIPv4 = v4
+	}
+	if v6 != "" {
+		c.cachedIPv6 = v6
+	}
+
+	// 2. 异步轻量探测公网 IP 与国家代码 (每小时或初次触发一次)
 	if time.Since(c.lastGeoCheck) > 1*time.Hour || c.cachedCountry == "" {
 		c.lastGeoCheck = now
 		go func() {
-			client := &http.Client{Timeout: 3 * time.Second}
+			client := &http.Client{Timeout: 4 * time.Second}
+			// 获取综合地理信息
 			resp, err := client.Get("https://api.ip.sb/geoip")
 			if err == nil {
 				defer resp.Body.Close()
@@ -276,9 +290,40 @@ func (c *LinuxCollector) Collect() (*common.MetricsData, error) {
 				if json.NewDecoder(resp.Body).Decode(&res) == nil {
 					if res.IP != "" {
 						c.cachedIP = res.IP
+						if strings.Contains(res.IP, ":") && c.cachedIPv6 == "" {
+							c.cachedIPv6 = res.IP
+						} else if strings.Contains(res.IP, ".") && c.cachedIPv4 == "" {
+							c.cachedIPv4 = res.IP
+						}
 					}
 					if res.CountryCode != "" {
 						c.cachedCountry = res.CountryCode
+					}
+				}
+			}
+
+			// 若依然缺少 v4，尝试补充 v4
+			if c.cachedIPv4 == "" {
+				if r4, err := client.Get("https://api-ipv4.ip.sb/ip"); err == nil {
+					defer r4.Body.Close()
+					if b, _ := io.ReadAll(r4.Body); len(b) > 0 {
+						ip := strings.TrimSpace(string(b))
+						if strings.Contains(ip, ".") {
+							c.cachedIPv4 = ip
+						}
+					}
+				}
+			}
+
+			// 若依然缺少 v6，尝试补充 v6
+			if c.cachedIPv6 == "" {
+				if r6, err := client.Get("https://api-ipv6.ip.sb/ip"); err == nil {
+					defer r6.Body.Close()
+					if b, _ := io.ReadAll(r6.Body); len(b) > 0 {
+						ip := strings.TrimSpace(string(b))
+						if strings.Contains(ip, ":") {
+							c.cachedIPv6 = ip
+						}
 					}
 				}
 			}
@@ -305,6 +350,53 @@ func (c *LinuxCollector) Collect() (*common.MetricsData, error) {
 		Arch:          runtime.GOARCH,
 		OS:            c.cachedOS,
 		PublicIP:      c.cachedIP,
+		IPv4:          c.cachedIPv4,
+		IPv6:          c.cachedIPv6,
 		CountryCode:   c.cachedCountry,
 	}, nil
+}
+
+// detectLocalPublicIPs 扫描本机全部网卡提取物理绑定的公网 IPv4 与 IPv6
+func detectLocalPublicIPs() (ipv4 string, ipv6 string) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return "", ""
+	}
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+		name := strings.ToLower(iface.Name)
+		if strings.HasPrefix(name, "docker") || strings.HasPrefix(name, "veth") || strings.HasPrefix(name, "br-") || strings.HasPrefix(name, "tun") {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if ip == nil || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+				continue
+			}
+			if ip4 := ip.To4(); ip4 != nil {
+				if !ip4.IsPrivate() && ipv4 == "" {
+					ipv4 = ip4.String()
+				}
+			} else if ip.To16() != nil {
+				// 全局单播 IPv6 (通常为 2xxx: / 3xxx:)
+				str := ip.String()
+				if ip.IsGlobalUnicast() && !strings.HasPrefix(str, "fc") && !strings.HasPrefix(str, "fd") && ipv6 == "" {
+					ipv6 = str
+				}
+			}
+		}
+	}
+	return ipv4, ipv6
 }

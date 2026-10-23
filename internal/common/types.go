@@ -23,6 +23,8 @@ type MetricsData struct {
 	Arch          string  `json:"arch"`           // 架构 (如 amd64, arm64)
 	OS            string  `json:"os"`             // 发行版 (如 debian, ubuntu, alpine, centos, windows)
 	PublicIP      string  `json:"public_ip,omitempty"`   // 探测到的公网 IP
+	IPv4          string  `json:"ipv4,omitempty"`        // 探测到的 IPv4 地址
+	IPv6          string  `json:"ipv6,omitempty"`        // 探测到的 IPv6 地址
 	CountryCode   string  `json:"country_code,omitempty"` // 探测到的国家代码 (如 HK, TW, US)
 }
 
@@ -46,22 +48,25 @@ type NodeConfig struct {
 	Price      string `json:"price"`            // 计费标签 (如 "$29.99/月")
 	ExpireDate string `json:"expire_date"`      // 到期日期 (格式 "YYYY/MM/DD" 或 "YYYY-MM-DD")
 	SortOrder  int    `json:"sort_order"`       // 排序权重
+	ProbePort  int    `json:"probe_port,omitempty"` // 测活探测端口 (默认 22)
 	Remark     string `json:"remark,omitempty"` // 内部备注 (绝不返回给大屏)
 }
 
 // ServerConfig 服务端全局配置模型
 type ServerConfig struct {
-	ListenPort    int          `json:"listen_port"`    // 监听端口，默认 8989
-	AdminPassword string       `json:"admin_password"` // 管理员密码
-	AccessMode    string       `json:"access_mode"`    // 大屏访问模式: "public" (公开) 或 "private" (密码锁屏)
-	SiteTitle     string       `json:"site_title"`     // 大屏站点标题
-	TGEnabled     bool         `json:"tg_enabled"`     // 是否启用 Telegram 通知
-	TGBotToken    string       `json:"tg_bot_token"`   // Telegram Bot Token
-	TGChatID      string       `json:"tg_chat_id"`     // Telegram 目标 Chat ID
-	TGProxy       string       `json:"tg_proxy"`       // Telegram Socks5 / HTTP 代理 (如 socks5://127.0.0.1:10808)
-	OfflineSec    int          `json:"offline_sec"`    // 判定掉线超时阈值 (秒)，默认 60
-	WarnDays      []int        `json:"warn_days"`      // 到期提醒阶梯天数，默认 [7, 3, 1, 0]
-	Nodes         []NodeConfig `json:"nodes"`          // 节点列表
+	ListenPort       int          `json:"listen_port"`        // 监听端口，默认 8989
+	AdminPassword    string       `json:"admin_password"`     // 管理员密码
+	AccessMode       string       `json:"access_mode"`        // 大屏访问模式: "public" (公开) 或 "private" (密码锁屏)
+	SiteTitle        string       `json:"site_title"`         // 大屏站点标题
+	TGEnabled        bool         `json:"tg_enabled"`         // 是否启用 Telegram 通知
+	TGBotToken       string       `json:"tg_bot_token"`       // Telegram Bot Token
+	TGChatID         string       `json:"tg_chat_id"`         // Telegram 目标 Chat ID
+	TGProxy          string       `json:"tg_proxy"`           // Telegram Socks5 / HTTP 代理 (如 socks5://127.0.0.1:10808)
+	OfflineSec       int          `json:"offline_sec"`        // 判定掉线超时阈值 (秒)，默认 60
+	WarnDays         []int        `json:"warn_days"`          // 到期提醒阶梯天数，默认 [7, 3, 1, 0]
+	GFWCheckURL      string       `json:"gfw_check_url"`      // 外部测活 API URL 模板 (支持 {ip} 和 {port} 占位符)
+	GFWCheckInterval int          `json:"gfw_check_interval"` // 测活轮询间隔 (秒)，默认 180
+	Nodes            []NodeConfig `json:"nodes"`              // 节点列表
 }
 
 // OverviewSummary 大屏看板顶部的全盘聚合数据模型
@@ -115,9 +120,10 @@ type NodeCardView struct {
 	Flag     string           `json:"flag"`
 	OS       string           `json:"os"`
 	Group    string           `json:"group"`
-	Billing  NodeBillingView  `json:"billing"`
-	Hardware NodeHardwareView `json:"hardware"`
-	Status   NodeStatusView   `json:"status"`
+	Billing   NodeBillingView  `json:"billing"`
+	Hardware  NodeHardwareView `json:"hardware"`
+	Status    NodeStatusView   `json:"status"`
+	GFWStatus string           `json:"gfw_status,omitempty"` // 国内连通性: "ok" (畅通), "blocked" (被墙), "" (未知/未开启)
 }
 
 // SummaryResponse 大屏前端聚合查询返回体

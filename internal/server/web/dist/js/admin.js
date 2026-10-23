@@ -40,6 +40,7 @@
     cfgTGBotToken: document.getElementById('cfgTGBotToken'),
     cfgTGChatID: document.getElementById('cfgTGChatID'),
     cfgTGProxy: document.getElementById('cfgTGProxy'),
+    cfgGFWCheckURL: document.getElementById('cfgGFWCheckURL'),
 
     nodeId: document.getElementById('nodeId'),
     nodeName: document.getElementById('nodeName'),
@@ -48,6 +49,7 @@
     nodePrice: document.getElementById('nodePrice'),
     nodeExpireDate: document.getElementById('nodeExpireDate'),
     nodeToken: document.getElementById('nodeToken'),
+    nodeProbePort: document.getElementById('nodeProbePort'),
   };
 
   // 1. 同步主题
@@ -171,6 +173,9 @@
     dom.cfgTGBotToken.value = cfg.tg_bot_token || '';
     dom.cfgTGChatID.value = cfg.tg_chat_id || '';
     dom.cfgTGProxy.value = cfg.tg_proxy || '';
+    if (dom.cfgGFWCheckURL) {
+      dom.cfgGFWCheckURL.value = cfg.gfw_check_url || '';
+    }
   }
 
   let draggedRow = null;
@@ -192,6 +197,39 @@
 
     dom.nodeTableBody.innerHTML = filtered.map(n => {
       const flagHtml = getFlagSVG(n.flag || n.region, n.name);
+
+      // 双栈 IPv4 / IPv6 渲染引擎 (Komari 同款双行展示，各自独立复制)
+      let ipHtml = '';
+      const items = [];
+      if (n.ipv4) {
+        items.push(`
+          <div style="display: flex; align-items: center; gap: 5px;">
+            <code style="font-family: var(--font-mono); font-weight: 700; color: #0284c7; font-size: 12.5px;">${escapeHtml(n.ipv4)}</code>
+            <button class="btn-sm" style="padding: 1px 5px; font-size: 10px;" onclick="window.copyText('${escapeHtml(n.ipv4)}')" title="复制IPv4">📋</button>
+          </div>
+        `);
+      }
+      if (n.ipv6) {
+        items.push(`
+          <div style="display: flex; align-items: center; gap: 5px;">
+            <code style="font-family: var(--font-mono); font-weight: 700; color: #38bdf8; font-size: 11.5px;" title="${escapeHtml(n.ipv6)}">${escapeHtml(n.ipv6)}</code>
+            <button class="btn-sm" style="padding: 1px 5px; font-size: 10px;" onclick="window.copyText('${escapeHtml(n.ipv6)}')" title="复制IPv6">📋</button>
+          </div>
+        `);
+      }
+      if (items.length > 0) {
+        ipHtml = `<div style="display: flex; flex-direction: column; gap: 3px;">${items.join('')}</div>`;
+      } else if (n.real_ip) {
+        ipHtml = `
+          <div style="display: flex; align-items: center; gap: 5px;">
+            <code style="font-family: var(--font-mono); font-weight: 700; color: #0284c7; font-size: 12.5px;">${escapeHtml(n.real_ip)}</code>
+            <button class="btn-sm" style="padding: 1px 5px; font-size: 10px;" onclick="window.copyText('${escapeHtml(n.real_ip)}')" title="点击复制IP">📋</button>
+          </div>
+        `;
+      } else {
+        ipHtml = `<span style="color: var(--text-muted); font-size: 12px;">${n.is_online ? '检测中...' : '--'}</span>`;
+      }
+
       return `
         <tr draggable="true" data-id="${escapeHtml(n.id)}">
           <td style="text-align: center; width: 44px;">
@@ -204,16 +242,7 @@
               <b style="font-size: 14px; color: var(--text-main);">${escapeHtml(n.name)}</b>
             </div>
           </td>
-          <td>
-            <div style="display: flex; align-items: center; gap: 6px;">
-              ${n.real_ip ? `
-                <code style="font-family: var(--font-mono); font-weight: 700; color: #0284c7; font-size: 13px;">${escapeHtml(n.real_ip)}</code>
-                <button class="btn-sm" style="padding: 1px 6px; font-size: 11px;" onclick="window.copyText('${escapeHtml(n.real_ip)}')" title="点击复制IP">📋</button>
-              ` : `
-                <span style="color: var(--text-muted); font-size: 12px;">${n.is_online ? '检测中...' : '--'}</span>
-              `}
-            </div>
-          </td>
+          <td>${ipHtml}</td>
           <td>
             <span class="node-os-badge">${escapeHtml(n.real_os || n.os || 'Linux')}</span>
           </td>
@@ -314,7 +343,8 @@
       tg_enabled: dom.cfgTGEnabled.checked,
       tg_bot_token: dom.cfgTGBotToken.value.trim(),
       tg_chat_id: dom.cfgTGChatID.value.trim(),
-      tg_proxy: dom.cfgTGProxy.value.trim()
+      tg_proxy: dom.cfgTGProxy.value.trim(),
+      gfw_check_url: dom.cfgGFWCheckURL ? dom.cfgGFWCheckURL.value.trim() : ''
     };
 
     try {
@@ -422,6 +452,7 @@
     dom.nodePrice.value = '$29.99/月';
     dom.nodeExpireDate.value = '';
     dom.nodeToken.value = '';
+    if (dom.nodeProbePort) dom.nodeProbePort.value = '22';
 
     dom.nodeModal.style.display = 'flex';
   });
@@ -444,6 +475,7 @@
     dom.nodePrice.value = n.price || '$29.99/月';
     dom.nodeExpireDate.value = (n.expire_date || '').replace(/\//g, '-');
     dom.nodeToken.value = n.token || '';
+    if (dom.nodeProbePort) dom.nodeProbePort.value = n.probe_port || 22;
 
     dom.nodeModal.style.display = 'flex';
   };
@@ -461,7 +493,8 @@
       group: dom.nodeGroup.value.trim(),
       price: dom.nodePrice.value.trim(),
       expire_date: dom.nodeExpireDate.value.replace(/-/g, '/'),
-      token: dom.nodeToken.value.trim()
+      token: dom.nodeToken.value.trim(),
+      probe_port: parseInt(dom.nodeProbePort ? dom.nodeProbePort.value : '22', 10) || 22
     };
 
     const submitBtn = dom.nodeForm.querySelector('button[type="submit"]');

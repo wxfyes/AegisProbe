@@ -15,8 +15,12 @@ type NodeState struct {
 	NodeID          string
 	LastSeen        time.Time
 	LatestMetrics   common.MetricsData
-	ConsecutiveHits int  // 连续成功上报次数 (用于防抖恢复)
-	WasOnline       bool // 记录上一次扫描时的在线状态
+	ConsecutiveHits int       // 连续成功上报次数 (用于防抖恢复)
+	WasOnline       bool      // 记录上一次扫描时的在线状态
+	IPv4            string    // 记忆的最新公网 IPv4
+	IPv6            string    // 记忆的最新公网 IPv6
+	GFWStatus       string    // 国内测活状态: "ok" (畅通), "blocked" (被墙), "" (未知)
+	GFWChecked      time.Time // 上次测活时间
 }
 
 type EventListener interface {
@@ -43,7 +47,7 @@ func (s *Store) AddListener(l EventListener) {
 	s.listeners = append(s.listeners, l)
 }
 
-// UpdateReport 接收到 Agent 单向推送
+// UpdateReport 接收到 Agent 单向推送 (增量合并双栈 IP，永远不丢失)
 func (s *Store) UpdateReport(nodeID string, metrics common.MetricsData) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -54,29 +58,63 @@ func (s *Store) UpdateReport(nodeID string, metrics common.MetricsData) {
 		st = &NodeState{
 			NodeID:          nodeID,
 			LastSeen:        now,
-			LatestMetrics:   metrics,
 			ConsecutiveHits: 1,
 			WasOnline:       false,
 		}
 		s.states[nodeID] = st
-		return
+	} else {
+		st.LastSeen = now
+		st.ConsecutiveHits++
 	}
 
-	st.LastSeen = now
+	// 增量合并 IPv4 与 IPv6
+	if metrics.IPv4 != "" {
+		st.IPv4 = metrics.IPv4
+	}
+	if metrics.IPv6 != "" {
+		st.IPv6 = metrics.IPv6
+	}
+	if metrics.PublicIP != "" {
+		if strings.Contains(metrics.PublicIP, ":") && st.IPv6 == "" {
+			st.IPv6 = metrics.PublicIP
+		} else if strings.Contains(metrics.PublicIP, ".") && st.IPv4 == "" {
+			st.IPv4 = metrics.PublicIP
+		}
+	}
+
+	metrics.IPv4 = st.IPv4
+	metrics.IPv6 = st.IPv6
+	if metrics.PublicIP == "" {
+		if st.IPv4 != "" {
+			metrics.PublicIP = st.IPv4
+		} else {
+			metrics.PublicIP = st.IPv6
+		}
+	}
+
 	st.LatestMetrics = metrics
-	st.ConsecutiveHits++
 }
 
-// GetNodeRealInfo 获取节点的实时公网 IP、真实操作系统以及在线状态供后台管理展示
-func (s *Store) GetNodeRealInfo(nodeID string) (ip string, os string, isOnline bool) {
+// UpdateGFWStatus 更新节点国内测活状态
+func (s *Store) UpdateGFWStatus(nodeID string, status string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if st, exists := s.states[nodeID]; exists {
+		st.GFWStatus = status
+		st.GFWChecked = time.Now()
+	}
+}
+
+// GetNodeRealInfo 获取节点的双栈 IP (IPv4, IPv6)、真实操作系统以及在线状态
+func (s *Store) GetNodeRealInfo(nodeID string) (ipv4 string, ipv6 string, os string, isOnline bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	st, exists := s.states[nodeID]
 	if !exists {
-		return "", "", false
+		return "", "", "", false
 	}
 	isOnline = time.Since(st.LastSeen) <= 60*time.Second
-	return st.LatestMetrics.PublicIP, st.LatestMetrics.OS, isOnline
+	return st.IPv4, st.IPv6, st.LatestMetrics.OS, isOnline
 }
 
 // CheckHeartbeats 定时扫描节点心跳状态，触发掉线或上线恢复
@@ -255,6 +293,12 @@ func (s *Store) GetSummary(siteTitle string, nodes []common.NodeConfig, offlineS
 				UptimeStr:      uptimeStr,
 				LastSeenSec:    lastSeenSec,
 			},
+			GFWStatus: func() string {
+				if hasState && isOnline {
+					return st.GFWStatus
+				}
+				return ""
+			}(),
 		}
 
 		cardViews = append(cardViews, card)

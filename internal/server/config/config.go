@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -125,6 +126,9 @@ func (m *Manager) ensureDefaults() {
 	if len(m.cfg.WarnDays) == 0 {
 		m.cfg.WarnDays = []int{7, 3, 1, 0}
 	}
+	if m.cfg.GFWCheckInterval <= 0 {
+		m.cfg.GFWCheckInterval = 180
+	}
 }
 
 func (m *Manager) saveLocked() error {
@@ -147,7 +151,7 @@ func (m *Manager) GetConfig() common.ServerConfig {
 	return m.cfg
 }
 
-func (m *Manager) UpdateSettings(title, password, accessMode string, port, offlineSec int, tgEnabled bool, tgToken, tgChatID, tgProxy string) error {
+func (m *Manager) UpdateSettings(title, password, accessMode string, port, offlineSec int, tgEnabled bool, tgToken, tgChatID, tgProxy string, gfwURL string, gfwInterval int) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -170,6 +174,12 @@ func (m *Manager) UpdateSettings(title, password, accessMode string, port, offli
 	m.cfg.TGBotToken = tgToken
 	m.cfg.TGChatID = tgChatID
 	m.cfg.TGProxy = tgProxy
+	m.cfg.GFWCheckURL = strings.TrimSpace(gfwURL)
+	if gfwInterval > 0 {
+		m.cfg.GFWCheckInterval = gfwInterval
+	} else if m.cfg.GFWCheckInterval <= 0 {
+		m.cfg.GFWCheckInterval = 180
+	}
 
 	return m.saveLocked()
 }
@@ -214,6 +224,9 @@ func (m *Manager) UpsertNode(node common.NodeConfig) error {
 	}
 	if node.OS == "" {
 		node.OS = "linux"
+	}
+	if node.ProbePort <= 0 {
+		node.ProbePort = 22
 	}
 
 	found := false
