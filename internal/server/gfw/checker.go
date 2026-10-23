@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -90,18 +91,24 @@ func (c *Checker) checkAll() {
 			port = 22
 		}
 
-		// 执行单点探测 (并发受限，防止打满外部 API)
+		// 执行单点探测 (平滑请求节奏，防止触发外部 API 频率限制)
 		go c.probeNode(node.ID, targetIP, port, templateURL)
-		time.Sleep(300 * time.Millisecond) // 平滑请求节奏
+		time.Sleep(600 * time.Millisecond)
 	}
 }
 
+var reBracedNum = regexp.MustCompile(`\{(\d+)\}`)
+
 func (c *Checker) probeNode(nodeID string, ip string, port int, templateURL string) {
-	url := strings.ReplaceAll(templateURL, "{ip}", ip)
+	// 容错处理：若用户手写了类似 {80} 或 {22}，自动移除大括号纠正为数字
+	cleanedTemplate := reBracedNum.ReplaceAllString(templateURL, "$1")
+
+	url := strings.ReplaceAll(cleanedTemplate, "{ip}", ip)
 	url = strings.ReplaceAll(url, "{port}", strconv.Itoa(port))
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
+		log.Printf("[国内测活] 节点 %s 构建请求失败: %v", nodeID, err)
 		c.store.UpdateGFWStatus(nodeID, "blocked")
 		return
 	}
@@ -109,12 +116,14 @@ func (c *Checker) probeNode(nodeID string, ip string, port int, templateURL stri
 
 	resp, err := c.client.Do(req)
 	if err != nil {
+		log.Printf("[国内测活] 节点 %s 请求接口失败: %v", nodeID, err)
 		c.store.UpdateGFWStatus(nodeID, "blocked")
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		log.Printf("[国内测活] 节点 %s 接口返回非200状态码: %d", nodeID, resp.StatusCode)
 		c.store.UpdateGFWStatus(nodeID, "blocked")
 		return
 	}
@@ -126,6 +135,8 @@ func (c *Checker) probeNode(nodeID string, ip string, port int, templateURL stri
 	}
 
 	isPass := parseAPIResult(body)
+	log.Printf("[国内测活] 节点: %s | 目标: %s:%d | 判定: %v | 接口响应: %s", nodeID, ip, port, isPass, string(body))
+
 	if isPass {
 		c.store.UpdateGFWStatus(nodeID, "ok")
 	} else {

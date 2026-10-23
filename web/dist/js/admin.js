@@ -46,6 +46,7 @@
     cfgGFWCheckInterval: document.getElementById('cfgGFWCheckInterval'),
     cfgGFWCustomIntervalGroup: document.getElementById('cfgGFWCustomIntervalGroup'),
     btnTriggerGFW: document.getElementById('btnTriggerGFW'),
+    btnFillDefaultGFW: document.getElementById('btnFillDefaultGFW'),
 
     nodeId: document.getElementById('nodeId'),
     nodeName: document.getElementById('nodeName'),
@@ -432,6 +433,18 @@
         ? parseInt(dom.cfgGFWCheckIntervalSelect.value, 10)
         : (parseInt(dom.cfgGFWCheckInterval.value, 10) || 14400);
       updateGFWBadge(dom.cfgGFWCheckURL.value.trim(), interval);
+    });
+  }
+
+  // 填入推荐测活模板
+  if (dom.btnFillDefaultGFW && dom.cfgGFWCheckURL) {
+    dom.btnFillDefaultGFW.addEventListener('click', () => {
+      dom.cfgGFWCheckURL.value = 'https://v2.xxapi.cn/api/tcping?address={ip}&port={port}';
+      const interval = (dom.cfgGFWCheckIntervalSelect && dom.cfgGFWCheckIntervalSelect.value !== 'custom')
+        ? parseInt(dom.cfgGFWCheckIntervalSelect.value, 10)
+        : (parseInt(dom.cfgGFWCheckInterval.value, 10) || 14400);
+      updateGFWBadge(dom.cfgGFWCheckURL.value.trim(), interval);
+      showToast('✨ 已填入官方标准测活模板，请点击【保存系统配置】！', 'success');
     });
   }
 
