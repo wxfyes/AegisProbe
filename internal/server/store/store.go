@@ -182,12 +182,41 @@ func (s *Store) GetSummary(siteTitle string, nodes []common.NodeConfig, offlineS
 		// 格式化在线时长
 		uptimeStr := formatUptime(m.UptimeSeconds)
 
+		// 优先使用 Agent 真实采集上报的发行版系统，杜绝写死配置错误
+		finalOS := strings.ToLower(strings.TrimSpace(m.OS))
+		if finalOS == "" {
+			finalOS = strings.ToLower(strings.TrimSpace(n.OS))
+		}
+		if finalOS == "" {
+			finalOS = "linux"
+		}
+
+		// 智能识别国旗：自动将两位代码转为真正的国旗 Emoji (如 HK->🇭🇰, TW->🇹🇼, US->🇺🇸)
+		finalRegion := strings.ToUpper(strings.TrimSpace(n.Region))
+		if m.CountryCode != "" {
+			finalRegion = strings.ToUpper(strings.TrimSpace(m.CountryCode))
+		}
+		if finalRegion == "" {
+			finalRegion = "GLOBAL"
+		}
+
+		finalFlag := strings.TrimSpace(n.Flag)
+		if m.CountryCode != "" {
+			finalFlag = common.CountryCodeToFlag(m.CountryCode)
+		} else if finalFlag != "" {
+			finalFlag = common.CountryCodeToFlag(finalFlag)
+		} else if finalRegion != "" {
+			finalFlag = common.CountryCodeToFlag(finalRegion)
+		} else {
+			finalFlag = "🌐"
+		}
+
 		card := common.NodeCardView{
 			ID:     n.ID,
 			Name:   n.Name,
-			Region: n.Region,
-			Flag:   n.Flag,
-			OS:     n.OS,
+			Region: finalRegion,
+			Flag:   finalFlag,
+			OS:     finalOS,
 			Group:  n.Group,
 			Billing: common.NodeBillingView{
 				Price:      n.Price,

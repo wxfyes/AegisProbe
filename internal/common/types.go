@@ -1,5 +1,7 @@
 package common
 
+import "strings"
+
 // MetricsData 定义受控端 Agent 采集到的原始指标
 type MetricsData struct {
 	CPUPercent    float64 `json:"cpu_percent"`    // CPU 使用率 0-100
@@ -20,6 +22,8 @@ type MetricsData struct {
 	CPUCores      int     `json:"cpu_cores"`      // CPU 物理核心数
 	Arch          string  `json:"arch"`           // 架构 (如 amd64, arm64)
 	OS            string  `json:"os"`             // 发行版 (如 debian, ubuntu, alpine, centos, windows)
+	PublicIP      string  `json:"public_ip,omitempty"`   // 探测到的公网 IP
+	CountryCode   string  `json:"country_code,omitempty"` // 探测到的国家代码 (如 HK, TW, US)
 }
 
 // ReportPayload 是 Agent 纯单向 POST 的请求体（无任何反向控制参数）
@@ -122,4 +126,33 @@ type SummaryResponse struct {
 	Summary   OverviewSummary `json:"summary"`
 	Groups    []string        `json:"groups"` // 所有存在的分组标签列表 (排重并置前 "所有")
 	Nodes     []NodeCardView  `json:"nodes"`
+}
+
+// CountryCodeToFlag 将两位国家代码 (如 HK, TW, US, JP, SG) 转换为对应 Unicode 国旗 Emoji
+func CountryCodeToFlag(code string) string {
+	code = strings.ToUpper(strings.TrimSpace(code))
+	// 如果本身已经是 Emoji (长度 > 2 字节)，直接返回
+	if len(code) == 0 {
+		return "🌐"
+	}
+	// 处理特殊情况
+	if code == "TW" {
+		return "🇹🇼"
+	}
+	if code == "HK" {
+		return "🇭🇰"
+	}
+	if code == "MO" {
+		return "🇲🇴"
+	}
+	if code == "CN" {
+		return "🇨🇳"
+	}
+	if len(code) == 2 && code[0] >= 'A' && code[0] <= 'Z' && code[1] >= 'A' && code[1] <= 'Z' {
+		r1 := rune(code[0]) - 'A' + 0x1F1E6
+		r2 := rune(code[1]) - 'A' + 0x1F1E6
+		return string([]rune{r1, r2})
+	}
+	// 如果传入的已经是 Emoji 字符
+	return code
 }

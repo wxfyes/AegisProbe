@@ -48,9 +48,9 @@
     dom.btnThemeToggle.textContent = theme === 'dark' ? '🌙' : '☀️';
   }
 
-  // 2. 跳转管理后台
+  // 2. 跳转管理后台 (新标签页打开，绝不覆盖大屏)
   dom.btnAdmin.addEventListener('click', () => {
-    window.location.href = '/admin.html';
+    window.open('/admin.html', '_blank');
   });
 
   // 3. 密码解锁处理
@@ -204,9 +204,9 @@
         card.innerHTML = `
           <div class="card-header">
             <div class="card-title-group">
-              <span class="node-flag">${node.flag || '🌐'}</span>
+              <span class="node-flag">${codeToFlag(node.flag || node.region)}</span>
               <span class="node-name" title="${escapeHtml(node.name)}">${escapeHtml(node.name)}</span>
-              <span class="node-os-badge">${escapeHtml(node.os || 'linux')}</span>
+              <span class="node-os-badge">${formatOSBadge(node.os)}</span>
             </div>
           </div>
 
@@ -271,6 +271,12 @@
         } else {
           card.classList.add('offline');
         }
+
+        // 国旗与系统徽章更新
+        const flagSpan = card.querySelector('.node-flag');
+        if (flagSpan) flagSpan.textContent = codeToFlag(node.flag || node.region);
+        const osBadge = card.querySelector('.node-os-badge');
+        if (osBadge) osBadge.textContent = formatOSBadge(node.os);
 
         // 胶囊更新
         const capDays = card.querySelector('.capsule-days');
@@ -342,6 +348,37 @@
 
   function formatSpeed(b) {
     return formatBytes(b) + '/s';
+  }
+
+  function codeToFlag(code) {
+    if (!code) return '🌐';
+    code = code.trim().toUpperCase();
+    if (code === 'TW') return '🇹🇼';
+    if (code === 'HK') return '🇭🇰';
+    if (code === 'MO') return '🇲🇴';
+    if (code === 'CN') return '🇨🇳';
+    if (code === 'GLOBAL' || code === 'DEFAULT') return '🌐';
+    if (code.length === 2 && code[0] >= 'A' && code[0] <= 'Z' && code[1] >= 'A' && code[1] <= 'Z') {
+      const r1 = code.charCodeAt(0) - 65 + 0x1F1E6;
+      const r2 = code.charCodeAt(1) - 65 + 0x1F1E6;
+      return String.fromCodePoint(r1, r2);
+    }
+    return code;
+  }
+
+  function formatOSBadge(os) {
+    if (!os) return 'Linux';
+    os = os.toLowerCase();
+    if (os.includes('debian')) return '🍥 Debian';
+    if (os.includes('ubuntu')) return 'Ubuntu';
+    if (os.includes('alpine')) return 'Alpine';
+    if (os.includes('centos')) return 'CentOS';
+    if (os.includes('rocky')) return 'Rocky';
+    if (os.includes('alma')) return 'Alma';
+    if (os.includes('arch')) return 'Arch';
+    if (os.includes('windows')) return '🪟 Windows';
+    if (os.includes('openwrt')) return 'OpenWrt';
+    return os.charAt(0).toUpperCase() + os.slice(1);
   }
 
   function escapeHtml(str) {

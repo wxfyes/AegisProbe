@@ -4,6 +4,8 @@ package collector
 
 import (
 	"bufio"
+	"encoding/json"
+	"net/http"
 	"os"
 	"runtime"
 	"strconv"
@@ -15,12 +17,15 @@ import (
 )
 
 type LinuxCollector struct {
-	lastCPUTotal uint64
-	lastCPUIdle  uint64
-	lastNetIn    uint64
-	lastNetOut   uint64
-	lastSample   time.Time
-	cachedOS     string
+	lastCPUTotal  uint64
+	lastCPUIdle   uint64
+	lastNetIn     uint64
+	lastNetOut    uint64
+	lastSample    time.Time
+	cachedOS      string
+	cachedIP      string
+	cachedCountry string
+	lastGeoCheck  time.Time
 }
 
 func newPlatformCollector() SystemCollector {
@@ -256,6 +261,30 @@ func (c *LinuxCollector) Collect() (*common.MetricsData, error) {
 
 	c.lastSample = now
 
+	// 异步轻量探测公网 IP 与国家代码 (每小时或初次触发一次)
+	if time.Since(c.lastGeoCheck) > 1*time.Hour || c.cachedCountry == "" {
+		c.lastGeoCheck = now
+		go func() {
+			client := &http.Client{Timeout: 3 * time.Second}
+			resp, err := client.Get("https://api.ip.sb/geoip")
+			if err == nil {
+				defer resp.Body.Close()
+				var res struct {
+					IP          string `json:"ip"`
+					CountryCode string `json:"country_code"`
+				}
+				if json.NewDecoder(resp.Body).Decode(&res) == nil {
+					if res.IP != "" {
+						c.cachedIP = res.IP
+					}
+					if res.CountryCode != "" {
+						c.cachedCountry = res.CountryCode
+					}
+				}
+			}
+		}()
+	}
+
 	return &common.MetricsData{
 		CPUPercent:    cpuPercent,
 		MemoryUsed:    memUsed,
@@ -275,5 +304,7 @@ func (c *LinuxCollector) Collect() (*common.MetricsData, error) {
 		CPUCores:      runtime.NumCPU(),
 		Arch:          runtime.GOARCH,
 		OS:            c.cachedOS,
+		PublicIP:      c.cachedIP,
+		CountryCode:   c.cachedCountry,
 	}, nil
 }

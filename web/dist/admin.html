@@ -3,13 +3,164 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>天阙·神盾控制台 - 系统管理</title>
+  <title>天阙·神盾安全管理后台 - Komari风格</title>
   <link rel="stylesheet" href="/css/style.css">
   <style>
-    .admin-container {
-      max-width: 1200px;
-      margin: 0 auto;
+    /* 现代化侧边栏管理控制台布局 (零 GPU 负担，纯 CPU 极速渲染) */
+    body {
+      padding: 0;
+      margin: 0;
+      background: var(--bg-color);
+      color: var(--text-main);
+      overflow-x: hidden;
     }
+
+    .admin-layout {
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* 左侧边栏 */
+    .admin-sidebar {
+      width: 240px;
+      background: var(--panel-bg);
+      border-right: 1px solid var(--panel-border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+
+    .sidebar-brand {
+      height: 64px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 20px;
+      border-bottom: 1px solid var(--panel-border);
+    }
+
+    .sidebar-brand .logo {
+      font-size: 22px;
+    }
+
+    .sidebar-brand .title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #2563eb;
+      letter-spacing: 0.5px;
+    }
+    [data-theme="dark"] .sidebar-brand .title {
+      color: #60a5fa;
+    }
+
+    .sidebar-nav {
+      flex: 1;
+      padding: 16px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+      padding: 10px 16px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text-sub);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      text-align: left;
+    }
+
+    .nav-item:hover {
+      background: rgba(37, 99, 235, 0.08);
+      color: var(--text-main);
+    }
+
+    .nav-item.active {
+      background: #2563eb;
+      color: #ffffff !important;
+      font-weight: 700;
+    }
+
+    .sidebar-footer {
+      padding: 16px 12px;
+      border-top: 1px solid var(--panel-border);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .sidebar-footer .nav-item {
+      font-size: 13px;
+    }
+
+    .sidebar-footer .btn-logout {
+      color: var(--accent-red);
+    }
+
+    .sidebar-footer .btn-logout:hover {
+      background: rgba(239, 68, 68, 0.1);
+    }
+
+    /* 右侧主内容区 */
+    .admin-main {
+      flex: 1;
+      padding: 24px 32px;
+      background: var(--bg-color);
+      overflow-y: auto;
+    }
+
+    .tab-pane {
+      display: none;
+    }
+
+    .tab-pane.active {
+      display: block;
+    }
+
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .page-title {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .search-input {
+      padding: 7px 12px;
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 6px;
+      color: var(--text-main);
+      font-size: 13px;
+      outline: none;
+      width: 200px;
+    }
+
+    .search-input:focus {
+      border-color: var(--accent-blue);
+    }
+
     .panel {
       background: var(--panel-bg);
       border: 1px solid var(--panel-border);
@@ -17,32 +168,31 @@
       padding: 24px;
       margin-bottom: 24px;
     }
-    .panel-title {
-      font-size: 16px;
-      font-weight: 700;
-      margin-bottom: 16px;
-      color: var(--text-main);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
+
     .data-table {
       width: 100%;
       border-collapse: collapse;
       text-align: left;
       font-size: 13px;
     }
+
     .data-table th, .data-table td {
       padding: 12px 14px;
       border-bottom: 1px solid var(--panel-border);
     }
+
     .data-table th {
       color: var(--text-main);
       font-weight: 700;
-      background: rgba(0, 0, 0, 0.05);
+      background: rgba(0, 0, 0, 0.04);
     }
+
+    .data-table tr:hover {
+      background: rgba(37, 99, 235, 0.03);
+    }
+
     .btn-sm {
-      padding: 6px 12px;
+      padding: 5px 10px;
       border-radius: 6px;
       font-size: 12px;
       font-weight: 700;
@@ -51,18 +201,22 @@
       color: var(--text-main);
       cursor: pointer;
     }
+
     .btn-sm:hover {
       border-color: var(--accent-blue);
       color: var(--accent-blue);
     }
+
     .btn-sm.danger {
       color: var(--accent-red);
     }
+
     .grid-2 {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 16px;
     }
+
     .code-box {
       background: #0f172a;
       border: 1px solid var(--panel-border);
@@ -78,150 +232,166 @@
   </style>
 </head>
 <body>
-  <div class="admin-container">
-    <!-- 头部 -->
-    <header class="top-bar">
-      <div class="site-brand">
-        <span class="site-logo">⚙️</span>
-        <span class="site-title">天阙·神盾安全管理后台</span>
+  <div class="admin-layout">
+    <!-- 左侧导航侧边栏 (Komari 后端架构) -->
+    <aside class="admin-sidebar">
+      <div class="sidebar-brand">
+        <span class="logo">🛡️</span>
+        <span class="title">神盾控制台</span>
       </div>
-      <div class="top-actions">
-        <a href="/" class="btn-sm" style="text-decoration: none; padding: 8px 14px;">返回监控大屏</a>
-        <button id="btnLogout" class="btn-sm danger" style="padding: 8px 14px;">退出登录</button>
+
+      <nav class="sidebar-nav">
+        <button class="nav-item active" data-tab="tab-servers">
+          <span>🖥️</span>
+          <span>服务器列表</span>
+        </button>
+        <button class="nav-item" data-tab="tab-settings">
+          <span>⚙️</span>
+          <span>系统设置</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <!-- 严格在新标签页打开，绝不覆盖后台当前页面 -->
+        <a href="/" target="_blank" rel="noopener noreferrer" class="nav-item external-link">
+          <span>🌐</span>
+          <span>打开监控大屏 ↗</span>
+        </a>
+        <button id="btnLogout" class="nav-item btn-logout">
+          <span>🚪</span>
+          <span>退出登录</span>
+        </button>
       </div>
-    </header>
+    </aside>
 
-    <!-- 节点管理面板 -->
-    <section class="panel">
-      <div class="panel-title">
-        <span>受控节点列表 (集群管理)</span>
-        <button id="btnAddNode" class="btn-primary" style="width: auto; padding: 6px 16px; font-size: 13px;">+ 添加新节点</button>
-      </div>
-      <div style="overflow-x: auto;">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>节点名称</th>
-              <th>国旗/地区</th>
-              <th>系统</th>
-              <th>分组</th>
-              <th>计费标签</th>
-              <th>到期时间</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody id="nodeTableBody">
-            <!-- 动态渲染 -->
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- 系统全局与告警配置 -->
-    <section class="panel">
-      <div class="panel-title">
-        <span>系统全局与 Telegram 告警配置</span>
-      </div>
-      <form id="settingsForm">
-        <div class="grid-2">
-          <div class="form-group">
-            <label class="form-label">大屏站点标题</label>
-            <input type="text" id="cfgSiteTitle" class="form-input" required>
-          </div>
-          <div class="form-group">
-            <label class="form-label">大屏访问模式</label>
-            <select id="cfgAccessMode" class="form-input">
-              <option value="public">公开模式 (任何人免密查看)</option>
-              <option value="private">私密模式 (毛玻璃密码锁屏)</option>
-            </select>
+    <!-- 右侧主体内容切换区 -->
+    <main class="admin-main">
+      <!-- 页面 1：服务器列表 (节点管理) -->
+      <section id="tab-servers" class="tab-pane active">
+        <div class="page-header">
+          <div class="page-title">受控服务器列表</div>
+          <div class="header-actions">
+            <input type="text" id="nodeSearchInput" class="search-input" placeholder="🔍 搜索服务器名称/IP...">
+            <button id="btnAddNode" class="btn-primary" style="width: auto; padding: 7px 18px; font-size: 13px;">+ 添加节点</button>
           </div>
         </div>
 
-        <div class="grid-2">
-          <div class="form-group">
-            <label class="form-label">管理员密码 (留空或******表示不修改)</label>
-            <input type="password" id="cfgAdminPassword" class="form-input" placeholder="******">
-          </div>
-          <div class="form-group">
-            <label class="form-label">掉线判定超时阈值 (秒)</label>
-            <input type="number" id="cfgOfflineSec" class="form-input" value="60" required>
-          </div>
-        </div>
-
-        <hr style="border: 0; border-top: 1px solid var(--panel-border); margin: 20px 0;">
-
-        <div class="form-group" style="display: flex; align-items: center; gap: 10px;">
-          <input type="checkbox" id="cfgTGEnabled" style="width: 18px; height: 18px; cursor: pointer;">
-          <label for="cfgTGEnabled" class="form-label" style="margin: 0; cursor: pointer;">启用 Telegram 智能告警中枢 (掉线/上线/账单到期)</label>
-        </div>
-
-        <div class="grid-2">
-          <div class="form-group">
-            <label class="form-label">Telegram Bot Token</label>
-            <input type="text" id="cfgTGBotToken" class="form-input" placeholder="例如 123456789:ABCdefGHIjkl...">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Telegram Chat ID</label>
-            <input type="text" id="cfgTGChatID" class="form-input" placeholder="例如 -100123456789 或 987654321">
+        <div class="panel" style="padding: 0; overflow: hidden;">
+          <div style="overflow-x: auto;">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th style="width: 120px;">ID</th>
+                  <th>名称 (国旗内置自动识别)</th>
+                  <th>IP 地址</th>
+                  <th>系统架构</th>
+                  <th>分组</th>
+                  <th>计费账单</th>
+                  <th>到期时间</th>
+                  <th style="text-align: right;">操作</th>
+                </tr>
+              </thead>
+              <tbody id="nodeTableBody">
+                <!-- 动态渲染 -->
+              </tbody>
+            </table>
           </div>
         </div>
+      </section>
 
-        <div class="form-group">
-          <label class="form-label">Telegram 网络代理 (可选，国内服务器请配置 Socks5/HTTP 代理)</label>
-          <input type="text" id="cfgTGProxy" class="form-input" placeholder="例如 socks5://127.0.0.1:10808 或 http://127.0.0.1:7890">
+      <!-- 页面 2：系统设置 (全局与告警配置) -->
+      <section id="tab-settings" class="tab-pane">
+        <div class="page-header">
+          <div class="page-title">系统全局与告警配置</div>
         </div>
 
-        <div style="display: flex; gap: 12px; margin-top: 20px;">
-          <button type="submit" class="btn-primary" style="width: auto; padding: 10px 24px;">保存系统配置</button>
-          <button type="button" id="btnTestTG" class="btn-sm" style="padding: 10px 18px;">🔔 发送 TG 测试消息</button>
+        <div class="panel">
+          <form id="settingsForm">
+            <div class="grid-2">
+              <div class="form-group">
+                <label class="form-label">大屏站点标题</label>
+                <input type="text" id="cfgSiteTitle" class="form-input" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label">大屏访问模式</label>
+                <select id="cfgAccessMode" class="form-input">
+                  <option value="public">公开模式 (任何人免密查看)</option>
+                  <option value="private">私密模式 (毛玻璃密码锁屏)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="grid-2">
+              <div class="form-group">
+                <label class="form-label">管理员密码 (留空或******表示不修改)</label>
+                <input type="password" id="cfgAdminPassword" class="form-input" placeholder="******">
+              </div>
+              <div class="form-group">
+                <label class="form-label">掉线判定超时阈值 (秒)</label>
+                <input type="number" id="cfgOfflineSec" class="form-input" value="60" required>
+              </div>
+            </div>
+
+            <hr style="border: 0; border-top: 1px solid var(--panel-border); margin: 20px 0;">
+
+            <div class="form-group" style="display: flex; align-items: center; gap: 10px;">
+              <input type="checkbox" id="cfgTGEnabled" style="width: 18px; height: 18px; cursor: pointer;">
+              <label for="cfgTGEnabled" class="form-label" style="margin: 0; cursor: pointer;">启用 Telegram 智能告警中枢 (掉线/上线/账单到期)</label>
+            </div>
+
+            <div class="grid-2">
+              <div class="form-group">
+                <label class="form-label">Telegram Bot Token</label>
+                <input type="text" id="cfgTGBotToken" class="form-input" placeholder="例如 123456789:ABCdefGHIjkl...">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Telegram Chat ID</label>
+                <input type="text" id="cfgTGChatID" class="form-input" placeholder="例如 -100123456789 或 987654321">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Telegram 网络代理 (可选，国内服务器请配置 Socks5/HTTP 代理)</label>
+              <input type="text" id="cfgTGProxy" class="form-input" placeholder="例如 socks5://127.0.0.1:10808 或 http://127.0.0.1:7890">
+            </div>
+
+            <div style="display: flex; gap: 12px; margin-top: 20px;">
+              <button type="submit" class="btn-primary" style="width: auto; padding: 10px 24px;">保存系统配置</button>
+              <button type="button" id="btnTestTG" class="btn-sm" style="padding: 10px 18px;">🔔 发送 TG 测试消息</button>
+            </div>
+          </form>
         </div>
-      </form>
-    </section>
+      </section>
+    </main>
   </div>
 
-  <!-- 节点编辑模态框 -->
+  <!-- 节点编辑/添加模态框 (国旗自动识别无需手写) -->
   <div class="modal-overlay" id="nodeModal" style="display: none;">
     <div class="modal-box" style="max-width: 500px; text-align: left;">
-      <h2 class="modal-title" id="nodeModalTitle">配置节点</h2>
+      <h2 class="modal-title" id="nodeModalTitle">配置受控节点</h2>
       <form id="nodeForm">
         <div class="grid-2">
           <div class="form-group">
             <label class="form-label">节点唯一 ID</label>
-            <input type="text" id="nodeId" class="form-input" placeholder="hk-relay-01" required>
+            <input type="text" id="nodeId" class="form-input" placeholder="例如 node_01" required>
           </div>
           <div class="form-group">
             <label class="form-label">节点名称</label>
-            <input type="text" id="nodeName" class="form-input" placeholder="香港-30M-122" required>
+            <input type="text" id="nodeName" class="form-input" placeholder="例如 香港-30M-122" required>
           </div>
         </div>
+
         <div class="grid-2">
           <div class="form-group">
-            <label class="form-label">国旗 Emoji</label>
-            <input type="text" id="nodeFlag" class="form-input" placeholder="🇭🇰" value="🇭🇰">
+            <label class="form-label">国家/地区代码 (留空由Agent自动判定)</label>
+            <input type="text" id="nodeRegion" class="form-input" placeholder="例如 HK / TW / US / JP" value="">
           </div>
           <div class="form-group">
-            <label class="form-label">地区代码</label>
-            <input type="text" id="nodeRegion" class="form-input" placeholder="HK" value="HK">
+            <label class="form-label">所属分组</label>
+            <input type="text" id="nodeGroup" class="form-input" placeholder="例如 中转 / 亚洲 / 直连" value="中转">
           </div>
         </div>
-        <div class="grid-2">
-          <div class="form-group">
-            <label class="form-label">系统图标</label>
-            <select id="nodeOS" class="form-input">
-              <option value="debian">Debian</option>
-              <option value="ubuntu">Ubuntu</option>
-              <option value="alpine">Alpine</option>
-              <option value="centos">CentOS</option>
-              <option value="windows">Windows</option>
-              <option value="linux">通用 Linux</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label class="form-label">分组名称</label>
-            <input type="text" id="nodeGroup" class="form-input" placeholder="中转" value="中转">
-          </div>
-        </div>
+
         <div class="grid-2">
           <div class="form-group">
             <label class="form-label">计费标签</label>
@@ -232,10 +402,12 @@
             <input type="date" id="nodeExpireDate" class="form-input">
           </div>
         </div>
+
         <div class="form-group">
-          <label class="form-label">认证 Token (留空自动生成)</label>
-          <input type="text" id="nodeToken" class="form-input" placeholder="留空则服务端自动生成">
+          <label class="form-label">认证 Token (留空由服务端自动生成)</label>
+          <input type="text" id="nodeToken" class="form-input" placeholder="留空自动生成安全随机Token">
         </div>
+
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
           <button type="button" class="btn-sm" id="btnCancelNode">取消</button>
           <button type="submit" class="btn-primary" style="width: auto; padding: 8px 20px;">确定保存</button>
@@ -246,12 +418,12 @@
 
   <!-- 一键安装命令展示弹窗 -->
   <div class="modal-overlay" id="cmdModal" style="display: none;">
-    <div class="modal-box" style="max-width: 600px; text-align: left;">
+    <div class="modal-box" style="max-width: 620px; text-align: left;">
       <h2 class="modal-title">🛡️ Agent 一键安全安装命令</h2>
       <p class="modal-desc" style="margin-bottom: 12px;">登录目标受控服务器终端，直接复制执行下方命令：</p>
       <div class="code-box" id="cmdText"></div>
       <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 16px;">
-        * 安装脚本将自动创建受限普通用户 <code>nobody:nogroup</code>，单向推送指标，无需暴露任何公网入站端口。
+        * 安装脚本将自动创建受限普通用户 <code>nobody:nogroup</code>，单向推送指标，零入站监听，物理级防渗透。
       </p>
       <div style="display: flex; justify-content: flex-end; gap: 10px;">
         <button type="button" class="btn-sm" id="btnCloseCmd">关闭</button>
