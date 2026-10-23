@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>天阙·神盾安全探针</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>">
+</head>
+<body>
+  <div class="container">
+    <!-- 顶部操作条 -->
+    <header class="top-bar">
+      <div class="site-brand">
+        <span class="site-logo">🛡️</span>
+        <span class="site-title" id="siteTitle">天阙·神盾安全探针</span>
+      </div>
+      <div class="top-actions">
+        <button class="btn-icon" id="btnThemeToggle" title="切换明暗主题">🌙</button>
+        <button class="btn-icon" id="btnAdmin" title="进入管理控制台">⚙</button>
+      </div>
+    </header>
+
+    <!-- 顶部全盘聚合状态看板 -->
+    <section class="summary-strip">
+      <div class="summary-item">
+        <span class="summary-label">当前时间</span>
+        <span class="summary-value" id="valCurrentTime">00:00:00</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">当前在线</span>
+        <span class="summary-value highlight" id="valOnlineRatio">0 / 0</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">节点地区</span>
+        <span class="summary-value" id="valRegionCount">0</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">流量概览</span>
+        <div class="summary-sub-val">
+          <span class="up" id="valTrafficUp">↑ 0 B</span>
+          <span class="down" id="valTrafficDown">↓ 0 B</span>
+        </div>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">网络速率</span>
+        <div class="summary-sub-val">
+          <span class="up" id="valSpeedUp">↑ 0 B/s</span>
+          <span class="down" id="valSpeedDown">↓ 0 B/s</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 分组筛选器 -->
+    <nav class="filter-bar" id="groupFilterBar">
+      <button class="filter-btn active" data-group="所有">所有</button>
+    </nav>
+
+    <!-- 节点卡片列表 -->
+    <main class="node-grid" id="nodeGrid">
+      <!-- 动态渲染卡片 -->
+    </main>
+  </div>
+
+  <!-- 私密模式密码解锁弹窗 -->
+  <div class="modal-overlay" id="lockModal" style="display: none;">
+    <div class="modal-box">
+      <div class="modal-icon">🔒</div>
+      <h2 class="modal-title">访问授权保护</h2>
+      <p class="modal-desc">当前探针大屏已开启私密模式，请输入密码解锁查看</p>
+      <form id="unlockForm" onsubmit="return false;">
+        <div class="form-group">
+          <label class="form-label" for="unlockPassword">访问密码</label>
+          <input type="password" id="unlockPassword" class="form-input" placeholder="输入访问密码..." autocomplete="current-password" autofocus required>
+        </div>
+        <div class="error-text" id="unlockError"></div>
+        <button type="submit" id="btnSubmitUnlock" class="btn-primary">解锁进入</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>

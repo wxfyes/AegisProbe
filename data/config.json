@@ -1,0 +1,55 @@
+{
+  "listen_port": 8989,
+  "admin_password": "e2830af2532186b45638",
+  "access_mode": "public",
+  "site_title": "天阙·神盾安全探针",
+  "tg_enabled": false,
+  "tg_bot_token": "",
+  "tg_chat_id": "",
+  "tg_proxy": "",
+  "offline_sec": 60,
+  "warn_days": [
+    7,
+    3,
+    1,
+    0
+  ],
+  "nodes": [
+    {
+      "id": "node_01",
+      "token": "ea3f2fb219d7207d439b730d11caed98",
+      "name": "香港-30M-122",
+      "region": "HK",
+      "flag": "🇭🇰",
+      "os": "debian",
+      "group": "中转",
+      "price": "$29.99/月",
+      "expire_date": "2026/11/05",
+      "sort_order": 1
+    },
+    {
+      "id": "node_02",
+      "token": "d6d100e9f7254543343e64649e86e3aa",
+      "name": "台湾-Hinet",
+      "region": "TW",
+      "flag": "🇹🇼",
+      "os": "ubuntu",
+      "group": "亚洲",
+      "price": "$350.00/月",
+      "expire_date": "2026/11/22",
+      "sort_order": 2
+    },
+    {
+      "id": "node_03",
+      "token": "99317acbe1565e42efaaa7314002f180",
+      "name": "香港转发-225",
+      "region": "HK",
+      "flag": "🇭🇰",
+      "os": "alpine",
+      "group": "中转",
+      "price": "$29.99/月",
+      "expire_date": "2026/11/22",
+      "sort_order": 3
+    }
+  ]
+}

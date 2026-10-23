@@ -1,0 +1,455 @@
+package handler
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"time"
+
+	"tianque_probe/internal/common"
+	"tianque_probe/internal/server/auth"
+	"tianque_probe/internal/server/config"
+	"tianque_probe/internal/server/notify"
+	"tianque_probe/internal/server/store"
+)
+
+type RouterHandler struct {
+	cfgMgr   *config.Manager
+	store    *store.Store
+	authMgr  *auth.AuthManager
+	notifier *notify.Notifier
+}
+
+func NewRouterHandler(cfgMgr *config.Manager, st *store.Store, authMgr *auth.AuthManager, notif *notify.Notifier) *RouterHandler {
+	return &RouterHandler{
+		cfgMgr:   cfgMgr,
+		store:    st,
+		authMgr:  authMgr,
+		notifier: notif,
+	}
+}
+
+func (h *RouterHandler) RegisterRoutes(mux *http.ServeMux) {
+	// Agent 单向上报接口
+	mux.HandleFunc("/api/report", h.handleReport)
+
+	// 大屏脱敏数据接口 (双模访问保护)
+	mux.HandleFunc("/api/nodes/summary", h.handleNodesSummary)
+
+	// 密码解锁与登录接口 (防暴力破解)
+	mux.HandleFunc("/api/auth/unlock", h.handleUnlock)
+	mux.HandleFunc("/api/auth/login", h.handleLogin)
+	mux.HandleFunc("/api/auth/logout", h.handleLogout)
+
+	// 管理控制台 API (强制鉴权)
+	mux.HandleFunc("/api/admin/config", h.adminRequireAuth(h.handleAdminConfig))
+	mux.HandleFunc("/api/admin/node/save", h.adminRequireAuth(h.handleAdminNodeSave))
+	mux.HandleFunc("/api/admin/node/delete", h.adminRequireAuth(h.handleAdminNodeDelete))
+	mux.HandleFunc("/api/admin/agent_install_cmd", h.adminRequireAuth(h.handleAdminInstallCmd))
+	mux.HandleFunc("/api/admin/test_tg", h.adminRequireAuth(h.handleAdminTestTG))
+
+	// 一键安装脚本直接托管
+	mux.HandleFunc("/install.sh", h.handleInstallScript)
+}
+
+func writeJSON(w http.ResponseWriter, status int, data interface{}) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(data)
+}
+
+// handleReport 处理 Agent 纯单向 POST 上报
+func (h *RouterHandler) handleReport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1024*64)) // 限制包体在 64KB 以内
+	if err != nil {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	var payload common.ReportPayload
+	if err := json.Unmarshal(body, &payload); err != nil {
+		http.Error(w, "Invalid Payload", http.StatusBadRequest)
+		return
+	}
+
+	if payload.NodeID == "" || payload.AuthToken == "" {
+		http.Error(w, "Missing Auth", http.StatusUnauthorized)
+		return
+	}
+
+	// 校验 Token
+	if !h.cfgMgr.ValidateNodeToken(payload.NodeID, payload.AuthToken) {
+		http.Error(w, "Unauthorized Node", http.StatusUnauthorized)
+		return
+	}
+
+	// 更新内存状态 (绝对不生成或返回任何反向下行指令)
+	h.store.UpdateReport(payload.NodeID, payload.Metrics)
+
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// handleNodesSummary 返回脱敏大屏状态
+func (h *RouterHandler) handleNodesSummary(w http.ResponseWriter, r *http.Request) {
+	cfg := h.cfgMgr.GetConfig()
+
+	// 私密模式下必须鉴权 Session
+	if cfg.AccessMode == "private" {
+		token := auth.ExtractTokenFromRequest(r)
+		if !h.authMgr.ValidateSession(token) {
+			writeJSON(w, http.StatusUnauthorized, map[string]interface{}{
+				"locked":        true,
+				"error":         "需要密码解锁访问",
+				"site_title":    cfg.SiteTitle,
+				"need_password": true,
+			})
+			return
+		}
+	}
+
+	summary := h.store.GetSummary(cfg.SiteTitle, cfg.Nodes, cfg.OfflineSec)
+	writeJSON(w, http.StatusOK, summary)
+}
+
+// handleUnlock 处理大屏私密锁屏解锁 (密码通用管理员密码)
+func (h *RouterHandler) handleUnlock(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	clientIP := auth.GetClientIP(r)
+	allowed, waitDur := h.authMgr.CheckRateLimit(clientIP)
+	if !allowed {
+		writeJSON(w, http.StatusTooManyRequests, map[string]interface{}{
+			"error": fmt.Sprintf("尝试次数过多，请在 %d 秒后再试", int(waitDur.Seconds())),
+		})
+		return
+	}
+
+	var req struct {
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	cfg := h.cfgMgr.GetConfig()
+	if req.Password != cfg.AdminPassword {
+		h.authMgr.RecordFailedAttempt(clientIP)
+		writeJSON(w, http.StatusUnauthorized, map[string]interface{}{
+			"error": "访问密码不正确",
+		})
+		return
+	}
+
+	h.authMgr.RecordSuccess(clientIP)
+	token := h.authMgr.CreateSession()
+
+	// 设置 Cookie，支持浏览器无感保存
+	http.SetCookie(w, &http.Cookie{
+		Name:     "aegis_session",
+		Value:    token,
+		Path:     "/",
+		Expires:  time.Now().Add(7 * 24 * time.Hour),
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"ok":    true,
+		"token": token,
+	})
+}
+
+// handleLogin 管理后台登录
+func (h *RouterHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
+	h.handleUnlock(w, r)
+}
+
+// handleLogout 注销
+func (h *RouterHandler) handleLogout(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "aegis_session",
+		Value:    "",
+		Path:     "/",
+		Expires:  time.Unix(0, 0),
+		HttpOnly: true,
+	})
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// adminRequireAuth 后台 API 鉴权中间件
+func (h *RouterHandler) adminRequireAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token := auth.ExtractTokenFromRequest(r)
+		if !h.authMgr.ValidateSession(token) {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{
+				"error": "未登录或登录态已失效",
+			})
+			return
+		}
+		next(w, r)
+	}
+}
+
+// handleAdminConfig 获取或修改配置
+func (h *RouterHandler) handleAdminConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		cfg := h.cfgMgr.GetConfig()
+		// 安全保护：不向前端泄露密码明文（仅返回占位符）
+		resp := cfg
+		resp.AdminPassword = "******"
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
+
+	if r.Method == http.MethodPost {
+		var req struct {
+			SiteTitle     string `json:"site_title"`
+			AdminPassword string `json:"admin_password"`
+			AccessMode    string `json:"access_mode"`
+			ListenPort    int    `json:"listen_port"`
+			OfflineSec    int    `json:"offline_sec"`
+			TGEnabled     bool   `json:"tg_enabled"`
+			TGBotToken    string `json:"tg_bot_token"`
+			TGChatID      string `json:"tg_chat_id"`
+			TGProxy       string `json:"tg_proxy"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid body", http.StatusBadRequest)
+			return
+		}
+
+		// 若密码未变动（仍为占位符）则不覆盖原密码
+		pwd := req.AdminPassword
+		if pwd == "******" || pwd == "" {
+			pwd = ""
+		}
+
+		if err := h.cfgMgr.UpdateSettings(
+			req.SiteTitle, pwd, req.AccessMode, req.ListenPort, req.OfflineSec,
+			req.TGEnabled, req.TGBotToken, req.TGChatID, req.TGProxy,
+		); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+
+		// 同步更新 Telegram 模块配置
+		h.notifier.UpdateConfig(req.TGEnabled, req.TGBotToken, req.TGChatID, req.TGProxy)
+
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		return
+	}
+
+	http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+}
+
+// handleAdminNodeSave 保存节点 (新增/编辑)
+func (h *RouterHandler) handleAdminNodeSave(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var node common.NodeConfig
+	if err := json.NewDecoder(r.Body).Decode(&node); err != nil {
+		http.Error(w, "Invalid body", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.cfgMgr.UpsertNode(node); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// handleAdminNodeDelete 删除节点
+func (h *RouterHandler) handleAdminNodeDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid body", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.cfgMgr.DeleteNode(req.ID); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// handleAdminInstallCmd 生成对应节点的一键部署命令
+func (h *RouterHandler) handleAdminInstallCmd(w http.ResponseWriter, r *http.Request) {
+	nodeID := r.URL.Query().Get("id")
+	node, exists := h.cfgMgr.GetNode(nodeID)
+	if !exists {
+		http.Error(w, "Node Not Found", http.StatusNotFound)
+		return
+	}
+
+	host := r.Host
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	serverURL := fmt.Sprintf("%s://%s", scheme, host)
+
+	// 组装一键命令 (配置 nobody 沙箱)
+	cmd := fmt.Sprintf(
+		"curl -fsSL %s/install.sh | bash -s -- --server=%s --id=%s --token=%s",
+		serverURL, serverURL, node.ID, node.Token,
+	)
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"cmd":        cmd,
+		"server_url": serverURL,
+		"node_id":    node.ID,
+		"token":      node.Token,
+	})
+}
+
+// handleAdminTestTG 发送 TG 测试消息
+func (h *RouterHandler) handleAdminTestTG(w http.ResponseWriter, r *http.Request) {
+	cfg := h.cfgMgr.GetConfig()
+	if !cfg.TGEnabled || cfg.TGBotToken == "" || cfg.TGChatID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "未开启 TG 通知或未配置 Token 与 ChatID",
+		})
+		return
+	}
+
+	msg := fmt.Sprintf("🛡️ <b>【天阙·神盾安全探针】</b>\n告警通道测试成功！当前时间：%s", time.Now().Format("2006-01-02 15:04:05"))
+	h.notifier.Push(msg)
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// handleInstallScript 提供一键安装 Shell 脚本
+func (h *RouterHandler) handleInstallScript(w http.ResponseWriter, r *http.Request) {
+	host := r.Host
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	serverURL := fmt.Sprintf("%s://%s", scheme, host)
+
+	script := fmt.Sprintf(`#!/usr/bin/env bash
+# ==============================================================================
+# 天阙·神盾安全探针 (TianQue-Probe) 一键部署脚本
+# 【安全铁律】：纯单向推送、强制使用 nobody 非特权用户运行、零入站监听
+# ==============================================================================
+set -e
+
+SERVER_URL="%s"
+NODE_ID=""
+TOKEN=""
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --server=*)
+      SERVER_URL="${1#*=}"
+      shift
+      ;;
+    --id=*)
+      NODE_ID="${1#*=}"
+      shift
+      ;;
+    --token=*)
+      TOKEN="${1#*=}"
+      shift
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+
+if [ -z "$NODE_ID" ] || [ -z "$TOKEN" ]; then
+  echo "❌ 错误: 必须提供 --id 和 --token 参数！"
+  exit 1
+fi
+
+echo "🛡️ 开始部署天阙·神盾被控探针..."
+
+# 检查系统架构
+ARCH=$(uname -m)
+case $ARCH in
+  x86_64)
+    BIN_NAME="aegis_agent_linux_amd64"
+    ;;
+  aarch64|arm64)
+    BIN_NAME="aegis_agent_linux_arm64"
+    ;;
+  i386|i686)
+    BIN_NAME="aegis_agent_linux_386"
+    ;;
+  *)
+    echo "❌ 暂不支持的架构: $ARCH"
+    exit 1
+    ;;
+esac
+
+INSTALL_DIR="/opt/tianque-probe"
+mkdir -p "$INSTALL_DIR"
+cd "$INSTALL_DIR"
+
+echo "📥 正在从主控下载探针二进制: ${SERVER_URL}/download/${BIN_NAME} ..."
+curl -fsSL "${SERVER_URL}/download/${BIN_NAME}" -o aegis_agent || {
+  echo "❌ 下载二进制文件失败，请确保主控服务正常且网络通畅！"
+  exit 1
+}
+chmod +x aegis_agent
+
+# 创建受限制的系统服务 (强制 nobody 最小特权)
+cat <<EOF > /etc/systemd/system/tianque-probe.service
+[Unit]
+Description=TianQue Aegis Probe Agent
+After=network.target
+
+[Service]
+Type=simple
+User=nobody
+Group=nogroup
+WorkingDirectory=${INSTALL_DIR}
+ExecStart=${INSTALL_DIR}/aegis_agent -server=${SERVER_URL} -id=${NODE_ID} -token=${TOKEN}
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable tianque-probe
+systemctl restart tianque-probe
+
+echo "✅ 天阙·神盾探针已成功安装并启动！"
+echo "🛡️ 当前运行用户: nobody (纯单向推送，零入站监听，物理级防渗透)"
+systemctl status tianque-probe --no-pager
+`, serverURL)
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(script))
+}
