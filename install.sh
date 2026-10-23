@@ -129,18 +129,31 @@ install_master() {
     echo -e "${BLUE}运行环境: ${INIT_SYS} | 机器架构: ${GOARCH} | 监听端口: ${LISTEN_PORT}${PLAIN}"
     echo -e "${BLUE}=================================================================${PLAIN}"
 
-    # 停止旧服务并清理可能残留的孤儿进程
+    # 停止旧服务并清理可能残留的孤儿进程（双重保险）
     if [ "$INIT_SYS" = "systemd" ]; then
         systemctl stop aegis-server 2>/dev/null || true
+        systemctl stop tianque-probe 2>/dev/null || true   # 兼容旧服务名
     elif [ "$INIT_SYS" = "openwrt" ] && [ -f "${OPENWRT_INIT_DIR}/aegis-server" ]; then
         ${OPENWRT_INIT_DIR}/aegis-server stop 2>/dev/null || true
     fi
+    # 强杀残留进程（防止 systemctl stop 未完全终止）
+    pkill -9 -x aegis_server 2>/dev/null || true
     killall -9 aegis_server 2>/dev/null || true
+    sleep 1
 
-    # 如果端口仍被占用，尝试强行释放该端口
+    # 端口仍被占用时强行释放（ss/fuser/lsof 三重兜底）
     if command -v fuser >/dev/null 2>&1; then
         fuser -k "${LISTEN_PORT}/tcp" 2>/dev/null || true
+    elif command -v ss >/dev/null 2>&1; then
+        local _pid
+        _pid=$(ss -tlnp "sport = :${LISTEN_PORT}" 2>/dev/null | grep -oP 'pid=\K[0-9]+' || true)
+        [ -n "$_pid" ] && kill -9 "$_pid" 2>/dev/null || true
+    elif command -v lsof >/dev/null 2>&1; then
+        local _pid
+        _pid=$(lsof -ti :"${LISTEN_PORT}" 2>/dev/null || true)
+        [ -n "$_pid" ] && kill -9 "$_pid" 2>/dev/null || true
     fi
+    sleep 1
 
     # 仅下载当前架构的服务端二进制，绝不下载任何其他架构或多余文件
     download_file "$bin_name" "${srv_dir}/aegis_server"

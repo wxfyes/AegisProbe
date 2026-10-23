@@ -394,6 +394,13 @@ esac
 AGENT_DIR="/opt/aegis-probe/agent"
 mkdir -p "$AGENT_DIR"
 
+# 停止并清理旧版 agent（兼容新旧两种服务名）
+systemctl stop aegis-agent 2>/dev/null || true
+systemctl stop tianque-probe 2>/dev/null || true
+pkill -9 -x aegis_agent 2>/dev/null || true
+killall -9 aegis_agent 2>/dev/null || true
+sleep 1
+
 echo "📥 正在精准下载 ${BIN_NAME} (架构: ${ARCH})..."
 GH_URL="https://github.com/${REPO}/releases/latest/download/${BIN_NAME}"
 MIRROR_URL="https://mirror.ghproxy.com/${GH_URL}"
@@ -410,6 +417,9 @@ else
   fi
 fi
 chmod +x "${AGENT_DIR}/aegis_agent"
+
+# 清理旧服务单元文件（兼容 tianque-probe.service 旧名）
+rm -f /etc/systemd/system/tianque-probe.service 2>/dev/null || true
 
 # 配置 systemd 服务 (nobody 最小特权，无 ProtectSystem 避免执行权限问题)
 cat <<EOF > /etc/systemd/system/aegis-agent.service
