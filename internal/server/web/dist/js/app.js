@@ -270,9 +270,13 @@
               <span class="label">系统负载</span>
               <span class="val val-load">${node.status.load_str}</span>
             </div>
+            <div class="detail-row detail-cycle-row">
+              <span class="label">到期时间</span>
+              <span class="val val-cycle">${node.billing.expire_date || '--'}</span>
+            </div>
             <div class="detail-row">
-              <span class="label">运行周期</span>
-              <span class="val val-cycle">到期: ${node.billing.expire_date || '--'} &nbsp; ${node.status.uptime_str}</span>
+              <span class="label">在线时长</span>
+              <span class="val val-uptime">${node.status.uptime_str}</span>
             </div>
           </div>
         `;
@@ -359,7 +363,9 @@
         if (valLoad) valLoad.textContent = node.status.load_str;
 
         const valCycle = card.querySelector('.val-cycle');
-        if (valCycle) valCycle.textContent = `到期: ${node.billing.expire_date || '--'}   ${node.status.uptime_str}`;
+        if (valCycle) valCycle.textContent = node.billing.expire_date || '--';
+        const valUptime = card.querySelector('.val-uptime');
+        if (valUptime) valUptime.textContent = node.status.uptime_str;
       }
     });
   }

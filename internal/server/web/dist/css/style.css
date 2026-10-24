@@ -740,6 +740,11 @@ body {
   color: var(--text-main);
 }
 
+.detail-cycle-row .val,
+.detail-row .val-uptime {
+  white-space: nowrap;
+}
+
 /* 网速和流量：深色加粗数值，彩色鲜明箭头，杜绝抖动与模糊 */
 .speed-text, .traffic-text {
   font-weight: 700;

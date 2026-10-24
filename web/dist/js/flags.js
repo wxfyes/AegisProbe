@@ -31,7 +31,8 @@
     russia: 'ru', vietnam: 'vn', laos: 'la', moldova: 'md',
     bolivia: 'bo', tanzania: 'tz', venezuela: 've', brunei: 'bn',
     england: 'gb-eng', scotland: 'gb-sct', wales: 'gb-wls', northernireland: 'gb-nir',
-    '中国香港': 'hk', '中国澳门': 'mo', '中国台湾': 'tw', '韩国': 'kr', '朝鲜': 'kp',
+    '香港': 'hk', '中国香港': 'hk', '澳门': 'mo', '中国澳门': 'mo',
+    '台湾': 'tw', '台灣': 'tw', '中国台湾': 'tw', '韩国': 'kr', '朝鲜': 'kp',
   }).forEach(([name, code]) => aliases.set(normalizeName(name), code));
 
   function directCode(value) {
@@ -54,10 +55,17 @@
     }
 
     const text = normalizeName(`${flag || ''} ${region || ''} ${name || ''}`);
-    if (!text || ['global', 'world', '🌐'].includes(String(flag || '').trim().toLowerCase())) return '';
+    if (!text) return '';
     const matches = Array.from(aliases.entries()).sort((a, b) => b[0].length - a[0].length);
     for (const [alias, code] of matches) {
       if (text.includes(alias)) return code;
+    }
+
+    // Some custom node labels use an ISO code suffix, e.g. "AK-TW".
+    const codeTokens = `${flag || ''} ${region || ''} ${name || ''}`.match(/(?:^|[^a-z])([a-z]{2})(?=$|[^a-z])/gi) || [];
+    for (const token of codeTokens.reverse()) {
+      const code = directCode(token.trim());
+      if (code && code !== 'global') return code;
     }
     return '';
   }
