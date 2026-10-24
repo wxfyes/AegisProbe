@@ -5,12 +5,17 @@
 
 :root {
   --bg-color: #0c111a;
-  --bg-gradient: none;
+  --bg-gradient: linear-gradient(145deg, #0d1726 0%, #111c2b 54%, #0d1925 100%);
   --panel-bg: #151d2a;
   --panel-border: #233044;
   --card-bg: #17202f;
   --card-border: #253349;
   --card-hover-border: #3b82f6;
+  --card-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
+  --card-hover-shadow: 0 3px 10px rgba(59, 130, 246, 0.14);
+  --panel-shadow: 0 2px 10px rgba(0, 0, 0, 0.14);
+  --card-head-bg: rgba(59, 130, 246, 0.07);
+  --network-highlight-bg: rgba(56, 189, 248, 0.08);
   --text-main: #f8fafc;
   --text-sub: #94a3b8;
   --text-muted: #64748b;
@@ -29,12 +34,17 @@
 
 [data-theme="light"] {
   --bg-color: #f0f4f9;
-  --bg-gradient: none;
+  --bg-gradient: linear-gradient(145deg, #edf4ff 0%, #f5f7fb 54%, #eef4f9 100%);
   --panel-bg: #ffffff;
   --panel-border: #dbeafe;
   --card-bg: #ffffff;
   --card-border: #e2e8f0;
   --card-hover-border: #3b82f6;
+  --card-shadow: 0 2px 8px rgba(15, 23, 42, 0.055);
+  --card-hover-shadow: 0 3px 10px rgba(37, 99, 235, 0.11);
+  --panel-shadow: 0 2px 10px rgba(15, 23, 42, 0.045);
+  --card-head-bg: rgba(37, 99, 235, 0.045);
+  --network-highlight-bg: rgba(2, 132, 199, 0.055);
   --text-main: #0f172a;       /* 纯深墨黑，高对比度 */
   --text-sub: #334155;        /* 次级文字深灰，绝不发虚 */
   --text-muted: #64748b;
@@ -52,7 +62,7 @@
 
 body {
   font-family: var(--font-family);
-  background: var(--bg-color);
+  background: var(--bg-gradient), var(--bg-color);
   color: var(--text-main);
   min-height: 100vh;
   padding: 20px 24px 60px 24px;
@@ -133,6 +143,7 @@ body {
   align-items: center;
   gap: 16px;
   margin-bottom: 20px;
+  box-shadow: var(--panel-shadow);
 }
 
 .summary-item {
@@ -315,6 +326,7 @@ body {
   border-color: #2563eb;
   color: #ffffff;
   font-weight: 700;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.2);
 }
 
 /* 节点卡片网格 (紧凑现代布局，优先一行 5 卡片) */
@@ -356,13 +368,15 @@ body {
 .node-card {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
-  border-radius: 12px;
+  border-radius: 14px;
   padding: 12px 13px;
   position: relative;
+  box-shadow: var(--card-shadow);
 }
 
 .node-card:hover {
   border-color: var(--card-hover-border);
+  box-shadow: var(--card-hover-shadow);
 }
 
 .node-card.offline {
@@ -393,25 +407,35 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  gap: 6px;
+  padding: 6px 7px 8px;
+  margin: -5px -6px 10px;
+  border-bottom: 1px solid var(--card-border);
+  border-radius: 8px 8px 0 0;
+  background: var(--card-head-bg);
 }
 
 .card-title-group {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
 }
 
 .node-flag {
   font-size: 20px;
   line-height: 1;
+  flex: 0 0 auto;
 }
 
 .node-name {
   font-size: 15px;
   font-weight: 700;
   color: var(--text-main);
+  min-width: 0;
+  flex: 0 1 auto;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -419,13 +443,15 @@ body {
 }
 
 .node-os-badge {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   padding: 2px 6px;
   background: #e2e8f0;
   border-radius: 4px;
   color: #334155;
   text-transform: capitalize;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 [data-theme="dark"] .node-os-badge {
   background: rgba(255, 255, 255, 0.08);
@@ -434,7 +460,7 @@ body {
 
 /* GFW 国内连通性测活徽章 */
 .gfw-badge {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   padding: 2px 7px;
   border-radius: 6px;
@@ -444,6 +470,7 @@ body {
   gap: 3px;
   line-height: 1.2;
   user-select: none;
+  flex: 0 0 auto;
 }
 
 .gfw-badge.ok {
@@ -547,12 +574,14 @@ body {
   margin-bottom: 10px;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+  flex-wrap: wrap;
 }
 
 .card-hardware span {
   display: flex;
   align-items: center;
   gap: 4px;
+  white-space: nowrap;
 }
 
 .hw-icon-cpu { color: #2563eb; }
@@ -717,6 +746,13 @@ body {
   font-size: 13px;
   font-weight: 800;
   white-space: nowrap;
+}
+
+.detail-network {
+  padding: 5px 7px;
+  margin: 0 -7px 2px;
+  border-radius: 7px;
+  background: var(--network-highlight-bg);
 }
 
 .detail-network .speed-reading-up,
