@@ -107,32 +107,43 @@ install_aegis_ping() {
     fi
     echo ""
 
-    # ── 下载二进制 ──
+    # ── 下载二进制 (多镜像智能轮询，秒级极速切换) ──
     mkdir -p "$INSTALL_DIR"
-    BIN_URL="https://github.com/${REPO}/releases/latest/download/aegis_ping_linux_${GOARCH}"
-    BIN_PROXY="https://mirror.ghproxy.com/${BIN_URL}"
     TMP_BIN="/tmp/aegis_ping_${GOARCH}"
+    rm -f "$TMP_BIN"
+
+    URLS="
+https://ghfast.top/https://github.com/${REPO}/releases/latest/download/aegis_ping_linux_${GOARCH}
+https://ghproxy.net/https://github.com/${REPO}/releases/latest/download/aegis_ping_linux_${GOARCH}
+https://github.com/${REPO}/releases/latest/download/aegis_ping_linux_${GOARCH}
+"
 
     echo -e "${CYAN}⬇️  正在下载 Aegis-Ping (${GOARCH})...${PLAIN}"
     download_ok=0
-    if command -v curl >/dev/null 2>&1; then
-        if curl -fsSL --connect-timeout 8 "$BIN_URL" -o "$TMP_BIN" 2>/dev/null; then
-            download_ok=1
-        elif curl -fsSL --connect-timeout 15 "$BIN_PROXY" -o "$TMP_BIN" 2>/dev/null; then
-            download_ok=1
-        fi
-    fi
 
-    if [ "$download_ok" -eq 0 ] && command -v wget >/dev/null 2>&1; then
-        if wget --timeout=8 -qO "$TMP_BIN" "$BIN_URL" 2>/dev/null; then
-            download_ok=1
-        elif wget --timeout=15 -qO "$TMP_BIN" "$BIN_PROXY" 2>/dev/null; then
-            download_ok=1
+    for dl_url in $URLS; do
+        [ -z "$dl_url" ] && continue
+        echo -e "${YELLOW}⚡ 正在通过线路拉取: $(echo "$dl_url" | cut -d'/' -f3)...${PLAIN}"
+        if command -v curl >/dev/null 2>&1; then
+            if curl -fL --connect-timeout 5 --max-time 30 --progress-bar "$dl_url" -o "$TMP_BIN"; then
+                if [ -s "$TMP_BIN" ]; then
+                    download_ok=1
+                    break
+                fi
+            fi
+        elif command -v wget >/dev/null 2>&1; then
+            if wget --timeout=5 -t 1 -qO "$TMP_BIN" "$dl_url"; then
+                if [ -s "$TMP_BIN" ]; then
+                    download_ok=1
+                    break
+                fi
+            fi
         fi
-    fi
+        rm -f "$TMP_BIN"
+    done
 
     if [ "$download_ok" -eq 0 ] || [ ! -s "$TMP_BIN" ]; then
-        echo -e "${RED}❌ 下载失败，请检查网络是否能访问 GitHub 或代理节点！${PLAIN}"
+        echo -e "${RED}❌ 所有镜像下载均失败，请检查网络连接！${PLAIN}"
         exit 1
     fi
 
