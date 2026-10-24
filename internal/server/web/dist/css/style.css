@@ -171,6 +171,21 @@ body {
   gap: 8px;
 }
 
+/* 顶部概览中的上行和下行分行显示，读数保持对齐 */
+.summary-item-pill:last-child .summary-pill-group,
+.summary-item-pill:nth-last-child(2) .summary-pill-group {
+  grid-template-columns: 1fr;
+  gap: 5px;
+}
+
+.summary-item-pill .summary-pill {
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .summary-pill {
   background: var(--card-bg);
   border: 1px solid var(--panel-border);
@@ -289,13 +304,20 @@ body {
 /* 节点卡片网格 (紧凑现代布局，优先一行 5 卡片) */
 .node-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
   gap: 12px;
 }
 
 @media (min-width: 1260px) {
   .node-grid {
     grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+  }
+}
+
+@media (min-width: 1600px) {
+  .node-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 12px;
   }
 }
@@ -319,7 +341,7 @@ body {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
   border-radius: 12px;
-  padding: 12px 14px;
+  padding: 12px 13px;
   position: relative;
 }
 
@@ -556,7 +578,12 @@ body {
   width: 0%;
   border-radius: 4px;
   background: #10b981;
+  transition: width 0.25s ease, background-color 0.25s ease;
 }
+
+.bar-fill.health-good { background: #10b981; }
+.bar-fill.health-warn { background: #f59e0b; }
+.bar-fill.health-danger { background: #ef4444; }
 
 .bar-val {
   width: 38px;
@@ -666,6 +693,11 @@ body {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--text-sub);
+}
+
+.detail-network .speed-text {
+  gap: 10px;
+  white-space: nowrap;
 }
 
 .detail-row {
@@ -808,6 +840,7 @@ body {
   .summary-item-pill {
     grid-column: span 1.5;
   }
+  .summary-item-pill .summary-pill-group { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 768px) {

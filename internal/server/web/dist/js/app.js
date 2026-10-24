@@ -205,6 +205,8 @@
       const ramPct = isOnline ? node.status.ram_pct : 0;
       const diskPct = isOnline ? node.status.disk_pct : 0;
       const swapPct = (!node.status.swap_off && isOnline) ? node.status.swap_pct : 0;
+      const healthClass = (value, warnAt, dangerAt) => value >= dangerAt ? 'health-danger' : value >= warnAt ? 'health-warn' : 'health-good';
+      const boundedPct = value => Math.max(0, Math.min(100, Number(value) || 0));
 
       if (!card) {
         // 首次挂载创建 DOM 节点
@@ -232,42 +234,34 @@
             <span><span class="hw-icon-disk">💾</span> <span class="val-disk">${node.hardware.disk_str}</span></span>
           </div>
 
-          <!-- 实时网速微仪表盘卡片 (复刻图一高大上质感) -->
-          <div class="speed-pill-group">
-            <div class="speed-pill up">
-              <div class="pill-header"><span>实时 ↑</span></div>
-              <div class="pill-value"><span class="val-speed-up">${node.status.speed_up_str}</span></div>
-            </div>
-            <div class="speed-pill down">
-              <div class="pill-header"><span>实时 ↓</span></div>
-              <div class="pill-value"><span class="val-speed-down">${node.status.speed_down_str}</span></div>
-            </div>
-          </div>
-
           <div class="metrics-bars">
             <div class="bar-row">
               <span class="bar-label">CPU</span>
-              <div class="bar-track"><div class="bar-fill bar-fill-cpu" style="width: ${cpuPct}%;"></div></div>
+              <div class="bar-track"><div class="bar-fill bar-fill-cpu ${healthClass(cpuPct, 60, 80)}" style="width: ${boundedPct(cpuPct)}%;"></div></div>
               <span class="bar-val val-cpu-pct">${cpuPct}%</span>
             </div>
             <div class="bar-row">
               <span class="bar-label">内存</span>
-              <div class="bar-track"><div class="bar-fill bar-fill-ram" style="width: ${ramPct}%;"></div></div>
+              <div class="bar-track"><div class="bar-fill bar-fill-ram ${healthClass(ramPct, 70, 85)}" style="width: ${boundedPct(ramPct)}%;"></div></div>
               <span class="bar-val val-ram-pct">${ramPct}%</span>
             </div>
             <div class="bar-row">
               <span class="bar-label">SWAP</span>
-              <div class="bar-track"><div class="bar-fill bar-fill-swap" style="width: ${swapPct}%;"></div></div>
+              <div class="bar-track"><div class="bar-fill bar-fill-swap" style="width: ${boundedPct(swapPct)}%;"></div></div>
               <span class="bar-val val-swap-pct ${node.status.swap_off ? 'off' : ''}">${node.status.swap_off ? 'OFF' : swapPct + '%'}</span>
             </div>
             <div class="bar-row">
               <span class="bar-label">硬盘</span>
-              <div class="bar-track"><div class="bar-fill bar-fill-disk" style="width: ${diskPct}%;"></div></div>
+              <div class="bar-track"><div class="bar-fill bar-fill-disk ${healthClass(diskPct, 70, 85)}" style="width: ${boundedPct(diskPct)}%;"></div></div>
               <span class="bar-val val-disk-pct">${diskPct}%</span>
             </div>
           </div>
 
           <div class="card-details">
+            <div class="detail-row detail-network">
+              <span class="label">网络</span>
+              <span class="speed-text"><span>↑ <span class="val-speed-up">${node.status.speed_up_str}</span></span><span>↓ <span class="val-speed-down">${node.status.speed_down_str}</span></span></span>
+            </div>
             <div class="detail-row">
               <span class="label">累计流量</span>
               <span class="traffic-text"><span class="up">↑</span> <span class="val-traffic-up">${node.status.traffic_up_str}</span> <span class="down">↓</span> <span class="val-traffic-down">${node.status.traffic_down_str}</span></span>
@@ -328,17 +322,17 @@
 
         // 进度条与数值更新
         const barCpu = card.querySelector('.bar-fill-cpu');
-        if (barCpu) barCpu.style.width = `${cpuPct}%`;
+        if (barCpu) { barCpu.style.width = `${boundedPct(cpuPct)}%`; barCpu.className = `bar-fill bar-fill-cpu ${healthClass(cpuPct, 60, 80)}`; }
         const valCpu = card.querySelector('.val-cpu-pct');
         if (valCpu) valCpu.textContent = `${cpuPct}%`;
 
         const barRam = card.querySelector('.bar-fill-ram');
-        if (barRam) barRam.style.width = `${ramPct}%`;
+        if (barRam) { barRam.style.width = `${boundedPct(ramPct)}%`; barRam.className = `bar-fill bar-fill-ram ${healthClass(ramPct, 70, 85)}`; }
         const valRamPct = card.querySelector('.val-ram-pct');
         if (valRamPct) valRamPct.textContent = `${ramPct}%`;
 
         const barSwap = card.querySelector('.bar-fill-swap');
-        if (barSwap) barSwap.style.width = `${swapPct}%`;
+        if (barSwap) barSwap.style.width = `${boundedPct(swapPct)}%`;
         const valSwap = card.querySelector('.val-swap-pct');
         if (valSwap) {
           valSwap.className = `bar-val val-swap-pct ${node.status.swap_off ? 'off' : ''}`;
@@ -346,7 +340,7 @@
         }
 
         const barDisk = card.querySelector('.bar-fill-disk');
-        if (barDisk) barDisk.style.width = `${diskPct}%`;
+        if (barDisk) { barDisk.style.width = `${boundedPct(diskPct)}%`; barDisk.className = `bar-fill bar-fill-disk ${healthClass(diskPct, 70, 85)}`; }
         const valDiskPct = card.querySelector('.val-disk-pct');
         if (valDiskPct) valDiskPct.textContent = `${diskPct}%`;
 
