@@ -121,7 +121,7 @@
       // 智能去重准确统计地区数量（优先根据节点真实地区/名称智能提取）
       const regionSet = new Set();
       (data.nodes || []).forEach(n => {
-        const c = detectCountry(n.flag || n.region, n.name);
+        const c = detectCountry(n.flag, n.name, n.region);
         if (c && c !== 'global') {
           regionSet.add(c);
         }
@@ -216,7 +216,7 @@
         card.innerHTML = `
           <div class="card-header">
             <div class="card-title-group">
-              <span class="node-flag">${getFlagSVG(node.flag || node.region, node.name)}</span>
+              <span class="node-flag">${getFlagSVG(node.flag, node.name, node.region)}</span>
               <span class="node-name" title="${escapeHtml(node.name)}">${escapeHtml(node.name)}</span>
               <span class="node-os-badge">${formatOSBadge(node.os)}</span>
             </div>
@@ -287,7 +287,7 @@
 
         // 国旗与系统徽章更新
         const flagSpan = card.querySelector('.node-flag');
-        if (flagSpan) flagSpan.innerHTML = getFlagSVG(node.flag || node.region, node.name);
+        if (flagSpan) flagSpan.innerHTML = getFlagSVG(node.flag, node.name, node.region);
         const osBadge = card.querySelector('.node-os-badge');
         if (osBadge) osBadge.textContent = formatOSBadge(node.os);
 
@@ -377,59 +377,13 @@
     return formatBytes(b) + '/s';
   }
 
-  // 智能地区代码提取函数
-  function detectCountry(code, name) {
-    name = (name || '').toLowerCase();
-    code = (code || '').trim().toLowerCase();
-    if (code === 'hk' || name.includes('香港') || name.includes('hk')) return 'hk';
-    if (code === 'tw' || name.includes('台湾') || name.includes('tw') || name.includes('hinet')) return 'tw';
-    if (code === 'jp' || name.includes('日本') || name.includes('东京') || name.includes('大阪') || name.includes('jp')) return 'jp';
-    if (code === 'sg' || name.includes('新加坡') || name.includes('狮城') || name.includes('sg')) return 'sg';
-    if (code === 'us' || name.includes('美国') || name.includes('美') || name.includes('us') || name.includes('洛杉矶')) return 'us';
-    if (code === 'cn' || name.includes('中国') || name.includes('国内') || name.includes('北京') || name.includes('上海') || name.includes('广州') || name.includes('深圳')) return 'cn';
-    if (code === 'de' || name.includes('德国') || name.includes('法兰克福') || name.includes('de')) return 'de';
-    if (code === 'gb' || code === 'uk' || name.includes('英国') || name.includes('伦敦') || name.includes('uk')) return 'gb';
-    if (code === 'kr' || name.includes('韩国') || name.includes('首尔') || name.includes('kr')) return 'kr';
-    if (code === 'fr' || code.includes('france') || name.includes('法国') || name.includes('巴黎')) return 'fr';
-    if (code === 'my' || code.includes('malaysia') || name.includes('马来西亚') || name.includes('malaysia') || name.includes('吉隆坡')) return 'my';
-    if (code === 'id' || code.includes('indonesia') || name.includes('印度尼西亚') || name.includes('印尼') || name.includes('indonesia') || name.includes('雅加达')) return 'id';
-    return (code && code !== 'global' && code !== 'un') ? code : 'global';
+  function detectCountry(code, name, region) {
+    return window.TianQueFlags.resolveCountryCode(code, name, region) || 'global';
   }
 
-  // 高清矢量 SVG 国旗渲染引擎 (彻底消灭 Windows 平台不支持 Emoji 导致的大地球和字符)
-  function getFlagSVG(code, name) {
-    const country = detectCountry(code, name);
-
-    switch (country) {
-      case 'hk': // 中国香港
-        return `<span class="flag-container" title="中国香港"><svg viewBox="0 0 600 400"><rect width="600" height="400" fill="#c8102e"/><circle cx="300" cy="200" r="95" fill="none" stroke="#fff" stroke-width="12"/><g fill="#fff" transform="translate(300,200)"><path d="M0,-85 C25,-40 45,-20 75,-10 C45,-10 25,10 0,65 C-25,10 -45,-10 -75,-10 C-45,-20 -25,-40 0,-85 Z"/><circle cx="0" cy="0" r="18" fill="#c8102e"/><circle cx="0" cy="0" r="10" fill="#fff"/></g></svg></span>`;
-      case 'tw': // 中国台湾
-        return `<span class="flag-container" title="中国台湾"><svg viewBox="0 0 600 400"><rect width="600" height="400" fill="#fe0000"/><rect width="300" height="200" fill="#000095"/><circle cx="150" cy="100" r="50" fill="#fff"/><circle cx="150" cy="100" r="35" fill="#000095"/><circle cx="150" cy="100" r="22" fill="#fff"/></svg></span>`;
-      case 'jp': // 日本
-        return `<span class="flag-container" title="日本"><svg viewBox="0 0 600 400"><rect width="600" height="400" fill="#ffffff"/><circle cx="300" cy="200" r="120" fill="#bc002d"/></svg></span>`;
-      case 'sg': // 新加坡
-        return `<span class="flag-container" title="新加坡"><svg viewBox="0 0 600 400"><rect width="600" height="200" fill="#ed2939"/><rect y="200" width="600" height="200" fill="#ffffff"/><circle cx="150" cy="100" r="65" fill="#ffffff"/><circle cx="175" cy="100" r="58" fill="#ed2939"/></svg></span>`;
-      case 'us': // 美国
-        return `<span class="flag-container" title="美国"><svg viewBox="0 0 600 400"><rect width="600" height="400" fill="#b22234"/><path d="M0,31H600M0,92H600M0,154H600M0,215H600M0,277H600M0,338H600" stroke="#fff" stroke-width="31"/><rect width="240" height="215" fill="#3c3b6e"/></svg></span>`;
-      case 'de': // 德国
-        return `<span class="flag-container" title="德国"><svg viewBox="0 0 600 400"><rect width="600" height="133" fill="#000000"/><rect y="133" width="600" height="134" fill="#dd0000"/><rect y="267" width="600" height="133" fill="#ffce00"/></svg></span>`;
-      case 'cn': // 中国
-        return `<span class="flag-container" title="中国"><svg viewBox="0 0 600 400"><rect width="600" height="400" fill="#de2910"/><polygon fill="#ffde00" points="100,50 120,110 68,73 132,73 80,110"/></svg></span>`;
-      case 'gb': // 英国
-        return `<span class="flag-container" title="英国"><svg viewBox="0 0 600 400"><rect width="600" height="400" fill="#012169"/><path d="M0,0 L600,400 M600,0 L0,400" stroke="#fff" stroke-width="60"/><path d="M0,0 L600,400 M600,0 L0,400" stroke="#c8102e" stroke-width="20"/><path d="M300,0 V400 M0,200 H600" stroke="#fff" stroke-width="100"/><path d="M300,0 V400 M0,200 H600" stroke="#c8102e" stroke-width="60"/></svg></span>`;
-      case 'kr': // 韩国
-        return `<span class="flag-container" title="韩国"><svg viewBox="0 0 600 400"><rect width="600" height="400" fill="#ffffff"/><circle cx="300" cy="200" r="100" fill="#c60c30"/><path d="M300,300 A100,100 0 0,1 300,100 A50,50 0 0,1 300,200 A50,50 0 0,0 300,300 Z" fill="#003478"/></svg></span>`;
-      case 'fr': // 法国
-        return `<span class="flag-container" title="法国"><svg viewBox="0 0 600 400"><rect width="200" height="400" fill="#002395"/><rect x="200" width="200" height="400" fill="#ffffff"/><rect x="400" width="200" height="400" fill="#ed2939"/></svg></span>`;
-      case 'my': // 马来西亚
-        return `<span class="flag-container" title="马来西亚"><svg viewBox="0 0 600 400"><rect width="600" height="400" fill="#ffffff"/><path d="M0 0H600V29H0zM0 57H600V86H0zM0 114H600V143H0zM0 171H600V200H0zM0 229H600V257H0zM0 286H600V314H0zM0 343H600V371H0z" fill="#cc0001"/><rect width="270" height="200" fill="#010066"/><circle cx="105" cy="100" r="43" fill="#ffcc00"/><circle cx="120" cy="88" r="34" fill="#010066"/><polygon points="193,62 201,83 224,82 207,96 214,117 193,105 172,117 179,96 162,82 185,83" fill="#ffcc00"/></svg></span>`;
-      case 'id': // 印度尼西亚
-        return `<span class="flag-container" title="印度尼西亚"><svg viewBox="0 0 600 400"><rect width="600" height="200" fill="#ce1126"/><rect y="200" width="600" height="200" fill="#ffffff"/></svg></span>`;
-      default: // 全球精美科技图标
-        return `<span class="flag-container" title="全球服务器"><svg viewBox="0 0 600 400"><rect width="600" height="400" fill="#1e293b"/><circle cx="300" cy="200" r="140" fill="none" stroke="#38bdf8" stroke-width="18"/><ellipse cx="300" cy="200" rx="70" ry="140" fill="none" stroke="#38bdf8" stroke-width="14"/><line x1="160" y1="200" x2="440" y2="200" stroke="#38bdf8" stroke-width="14"/></svg></span>`;
-    }
+  function getFlagSVG(code, name, region) {
+    return window.TianQueFlags.getFlagHTML(code, name, region);
   }
-
   function formatOSBadge(os) {
     if (!os) return 'Linux';
     os = os.toLowerCase();
