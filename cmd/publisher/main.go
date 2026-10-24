@@ -63,13 +63,23 @@ func main() {
 
 	// 3. 待上传的文件 (统一从 bin 目录读取最新交叉编译产物)
 	filesToUpload := []string{
+		// 主控服务端
 		"bin/aegis_server_linux_amd64",
 		"bin/aegis_server_windows_amd64.exe",
+		// 受控 Agent
 		"bin/aegis_agent_linux_amd64",
 		"bin/aegis_agent_linux_arm64",
 		"bin/aegis_agent_linux_386",
 		"bin/aegis_agent_windows_amd64.exe",
+		// 家宽测活微探针 Aegis-Ping (全架构)
+		"bin/aegis_ping_linux_amd64",
+		"bin/aegis_ping_linux_arm64",
+		"bin/aegis_ping_linux_armv7",
+		"bin/aegis_ping_linux_386",
+		"bin/aegis_ping_windows_amd64.exe",
+		// 一键部署脚本
 		"install.sh",
+		"scripts/install_aegis_ping.sh",
 	}
 
 	// 4. 清理旧资产
