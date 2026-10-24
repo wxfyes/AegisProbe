@@ -35,29 +35,25 @@
         <span class="summary-label">节点地区</span>
         <span class="summary-value" id="valRegionCount">0</span>
       </div>
-      <div class="summary-item summary-item-pill">
+      <div class="summary-item summary-item-reading">
         <span class="summary-label">流量概览</span>
-        <div class="summary-pill-group">
-          <div class="summary-pill up">
-            <span class="pill-header">总上行 ↑</span>
-            <span class="pill-value" id="valTrafficUp">0 B</span>
+        <div class="summary-reading-group">
+          <div class="summary-reading-row" aria-label="总上行流量">
+            <span class="summary-arrow up">↑</span><span id="valTrafficUp">0 B</span>
           </div>
-          <div class="summary-pill down">
-            <span class="pill-header">总下行 ↓</span>
-            <span class="pill-value" id="valTrafficDown">0 B</span>
+          <div class="summary-reading-row" aria-label="总下行流量">
+            <span class="summary-arrow down">↓</span><span id="valTrafficDown">0 B</span>
           </div>
         </div>
       </div>
-      <div class="summary-item summary-item-pill">
+      <div class="summary-item summary-item-reading summary-item-speed">
         <span class="summary-label">网络速率</span>
-        <div class="summary-pill-group">
-          <div class="summary-pill up">
-            <span class="pill-header">实时 ↑</span>
-            <span class="pill-value" id="valSpeedUp">0 B/s</span>
+        <div class="summary-reading-group">
+          <div class="summary-reading-row speed-reading-up" aria-label="实时上行网速">
+            <span class="summary-arrow">↑</span><span id="valSpeedUp">0 B/s</span>
           </div>
-          <div class="summary-pill down">
-            <span class="pill-header">实时 ↓</span>
-            <span class="pill-value" id="valSpeedDown">0 B/s</span>
+          <div class="summary-reading-row speed-reading-down" aria-label="实时下行网速">
+            <span class="summary-arrow">↓</span><span id="valSpeedDown">0 B/s</span>
           </div>
         </div>
       </div>

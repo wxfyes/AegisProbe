@@ -260,7 +260,7 @@
           <div class="card-details">
             <div class="detail-row detail-network">
               <span class="label">网络</span>
-              <span class="speed-text"><span>↑ <span class="val-speed-up">${node.status.speed_up_str}</span></span><span>↓ <span class="val-speed-down">${node.status.speed_down_str}</span></span></span>
+              <span class="speed-text"><span class="speed-reading-up">↑ <span class="val-speed-up">${node.status.speed_up_str}</span></span><span class="speed-reading-down">↓ <span class="val-speed-down">${node.status.speed_down_str}</span></span></span>
             </div>
             <div class="detail-row">
               <span class="label">累计流量</span>
@@ -390,7 +390,9 @@
     if (code === 'de' || name.includes('德国') || name.includes('法兰克福') || name.includes('de')) return 'de';
     if (code === 'gb' || code === 'uk' || name.includes('英国') || name.includes('伦敦') || name.includes('uk')) return 'gb';
     if (code === 'kr' || name.includes('韩国') || name.includes('首尔') || name.includes('kr')) return 'kr';
-    if (code === 'fr' || name.includes('法国') || name.includes('巴黎')) return 'fr';
+    if (code === 'fr' || code.includes('france') || name.includes('法国') || name.includes('巴黎')) return 'fr';
+    if (code === 'my' || code.includes('malaysia') || name.includes('马来西亚') || name.includes('malaysia') || name.includes('吉隆坡')) return 'my';
+    if (code === 'id' || code.includes('indonesia') || name.includes('印度尼西亚') || name.includes('印尼') || name.includes('indonesia') || name.includes('雅加达')) return 'id';
     return (code && code !== 'global' && code !== 'un') ? code : 'global';
   }
 
@@ -417,6 +419,12 @@
         return `<span class="flag-container" title="英国"><svg viewBox="0 0 600 400"><rect width="600" height="400" fill="#012169"/><path d="M0,0 L600,400 M600,0 L0,400" stroke="#fff" stroke-width="60"/><path d="M0,0 L600,400 M600,0 L0,400" stroke="#c8102e" stroke-width="20"/><path d="M300,0 V400 M0,200 H600" stroke="#fff" stroke-width="100"/><path d="M300,0 V400 M0,200 H600" stroke="#c8102e" stroke-width="60"/></svg></span>`;
       case 'kr': // 韩国
         return `<span class="flag-container" title="韩国"><svg viewBox="0 0 600 400"><rect width="600" height="400" fill="#ffffff"/><circle cx="300" cy="200" r="100" fill="#c60c30"/><path d="M300,300 A100,100 0 0,1 300,100 A50,50 0 0,1 300,200 A50,50 0 0,0 300,300 Z" fill="#003478"/></svg></span>`;
+      case 'fr': // 法国
+        return `<span class="flag-container" title="法国"><svg viewBox="0 0 600 400"><rect width="200" height="400" fill="#002395"/><rect x="200" width="200" height="400" fill="#ffffff"/><rect x="400" width="200" height="400" fill="#ed2939"/></svg></span>`;
+      case 'my': // 马来西亚
+        return `<span class="flag-container" title="马来西亚"><svg viewBox="0 0 600 400"><rect width="600" height="400" fill="#ffffff"/><path d="M0 0H600V29H0zM0 57H600V86H0zM0 114H600V143H0zM0 171H600V200H0zM0 229H600V257H0zM0 286H600V314H0zM0 343H600V371H0z" fill="#cc0001"/><rect width="270" height="200" fill="#010066"/><circle cx="105" cy="100" r="43" fill="#ffcc00"/><circle cx="120" cy="88" r="34" fill="#010066"/><polygon points="193,62 201,83 224,82 207,96 214,117 193,105 172,117 179,96 162,82 185,83" fill="#ffcc00"/></svg></span>`;
+      case 'id': // 印度尼西亚
+        return `<span class="flag-container" title="印度尼西亚"><svg viewBox="0 0 600 400"><rect width="600" height="200" fill="#ce1126"/><rect y="200" width="600" height="200" fill="#ffffff"/></svg></span>`;
       default: // 全球精美科技图标
         return `<span class="flag-container" title="全球服务器"><svg viewBox="0 0 600 400"><rect width="600" height="400" fill="#1e293b"/><circle cx="300" cy="200" r="140" fill="none" stroke="#38bdf8" stroke-width="18"/><ellipse cx="300" cy="200" rx="70" ry="140" fill="none" stroke="#38bdf8" stroke-width="14"/><line x1="160" y1="200" x2="440" y2="200" stroke="#38bdf8" stroke-width="14"/></svg></span>`;
     }

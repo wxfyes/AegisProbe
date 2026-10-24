@@ -19,6 +19,8 @@
   --accent-green: #10b981;
   --accent-yellow: #f59e0b;
   --accent-red: #ef4444;
+  --speed-up-color: #5eead4;
+  --speed-down-color: #c4b5fd;
   --bar-bg: #222f42;
   --bar-fill: #10b981;
   --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
@@ -36,6 +38,8 @@
   --text-main: #0f172a;       /* 纯深墨黑，高对比度 */
   --text-sub: #334155;        /* 次级文字深灰，绝不发虚 */
   --text-muted: #64748b;
+  --speed-up-color: #0f766e;
+  --speed-down-color: #7e22ce;
   --bar-bg: #edf2f7;          /* 进度条底槽清爽统一 */
   --bar-fill: #10b981;        /* 饱满亮绿 */
 }
@@ -164,27 +168,40 @@ body {
   color: #38bdf8;
 }
 
-/* 顶部流量与速率双胶囊微仪表盘 (与卡片风格呼应，高大上) */
-.summary-item-pill .summary-pill-group {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
+/* 顶部概览：参考简洁仪表盘，两行数据直接排列，不使用边框卡片 */
+.summary-reading-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-/* 顶部概览中的上行和下行分行显示，读数保持对齐 */
-.summary-item-pill:last-child .summary-pill-group,
-.summary-item-pill:nth-last-child(2) .summary-pill-group {
-  grid-template-columns: 1fr;
-  gap: 5px;
+.summary-reading-row {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-height: 20px;
+  color: var(--text-main);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+  white-space: nowrap;
 }
 
-.summary-item-pill .summary-pill {
-  flex-direction: row;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
+.summary-arrow {
+  width: 12px;
+  flex: 0 0 12px;
+  font-family: var(--font-family);
+  font-size: 14px;
+  font-weight: 800;
+  text-align: center;
 }
+
+.summary-reading-row .summary-arrow.up { color: #059669; }
+.summary-reading-row .summary-arrow.down { color: #2563eb; }
+.summary-item-speed .summary-reading-row { color: var(--speed-up-color); font-weight: 750; }
+.summary-item-speed .speed-reading-down { color: var(--speed-down-color); }
 
 .summary-pill {
   background: var(--card-bg);
@@ -700,6 +717,9 @@ body {
   white-space: nowrap;
 }
 
+.detail-network .speed-reading-up { color: var(--speed-up-color); }
+.detail-network .speed-reading-down { color: var(--speed-down-color); }
+
 .detail-row {
   display: flex;
   justify-content: space-between;
@@ -837,10 +857,9 @@ body {
   .summary-strip {
     grid-template-columns: repeat(3, 1fr);
   }
-  .summary-item-pill {
+  .summary-item-reading {
     grid-column: span 1.5;
   }
-  .summary-item-pill .summary-pill-group { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 768px) {
@@ -874,30 +893,14 @@ body {
     font-size: 16px;
   }
 
-  /* 流量概览与网络速率在手机端各独占一行，微药丸平分宽度舒展展示 */
-  .summary-item-pill {
+  /* 流量概览与网速在手机端各独占一行 */
+  .summary-item-reading {
     grid-column: 1 / -1;
   }
 
-  .summary-item-pill .summary-label {
+  .summary-item-reading .summary-label {
     font-size: 11px;
     margin-bottom: 4px;
-  }
-
-  .summary-pill-group {
-    gap: 8px;
-  }
-
-  .summary-pill {
-    padding: 6px 10px;
-  }
-
-  .summary-pill .pill-header {
-    font-size: 10px;
-  }
-
-  .summary-pill .pill-value {
-    font-size: 13px;
   }
 
   /* 节点卡片在移动端单列充满，阅读极为舒适 */
@@ -913,18 +916,6 @@ body {
 
   .card-header .node-title {
     font-size: 14px;
-  }
-
-  .speed-pill-group {
-    gap: 8px;
-  }
-
-  .speed-pill {
-    padding: 6px 10px;
-  }
-
-  .speed-pill .pill-value {
-    font-size: 13.5px;
   }
 
   .card-details {
