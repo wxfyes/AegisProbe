@@ -316,6 +316,8 @@ func (s *Store) GetSummary(siteTitle string, nodes []common.NodeConfig, offlineS
 				DiskPct:        diskPct,
 				SpeedUpStr:     formatSpeed(m.NetOutSpeed),
 				SpeedDownStr:   formatSpeed(m.NetInSpeed),
+				TCPConnections: m.TCPConnections,
+				UDPSockets:     m.UDPSockets,
 				TrafficUpStr:   formatBytes(m.NetOutTotal),
 				TrafficDownStr: formatBytes(m.NetInTotal),
 				LoadStr:        loadStr,

@@ -3,8 +3,11 @@
 package collector
 
 import (
+	"context"
 	"net"
+	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -14,7 +17,7 @@ import (
 )
 
 var (
-	kernel32              = syscall.NewLazyDLL("kernel32.dll")
+	kernel32               = syscall.NewLazyDLL("kernel32.dll")
 	procGlobalMemoryStatus = kernel32.NewProc("GlobalMemoryStatusEx")
 	procGetDiskFreeSpaceEx = kernel32.NewProc("GetDiskFreeSpaceExW")
 	procGetSystemTimes     = kernel32.NewProc("GetSystemTimes")
@@ -34,12 +37,15 @@ type memorystatusex struct {
 }
 
 type WindowsCollector struct {
-	lastIdleTime   uint64
-	lastKernelTime uint64
-	lastUserTime   uint64
-	lastNetIn      uint64
-	lastNetOut     uint64
-	lastSample     time.Time
+	lastIdleTime     uint64
+	lastKernelTime   uint64
+	lastUserTime     uint64
+	lastNetIn        uint64
+	lastNetOut       uint64
+	lastSample       time.Time
+	lastSocketSample time.Time
+	tcpConnections   int
+	udpSockets       int
 }
 
 func newPlatformCollector() SystemCollector {
@@ -147,33 +153,70 @@ func (c *WindowsCollector) Collect() (*common.MetricsData, error) {
 	uptimeSec := uint64(r / 1000)
 
 	c.lastSample = now
+	if now.Sub(c.lastSocketSample) >= 30*time.Second || c.lastSocketSample.IsZero() {
+		c.sampleSocketCounts()
+		c.lastSocketSample = now
+	}
 
 	v4, v6 := detectWindowsPublicIPs()
 
 	return &common.MetricsData{
-		Version:       common.Version,
-		CPUPercent:    cpuPercent,
-		MemoryUsed:    memUsed,
-		MemoryTotal:   memTotal,
-		SwapUsed:      swapUsed,
-		SwapTotal:     swapTotal,
-		DiskUsed:      diskUsed,
-		DiskTotal:     diskTotal,
-		NetInSpeed:    simInSpeed,
-		NetOutSpeed:   simOutSpeed,
-		NetInTotal:    c.lastNetIn,
-		NetOutTotal:   c.lastNetOut,
-		Load1:         0.02,
-		Load5:         0.05,
-		Load15:        0.01,
-		UptimeSeconds: uptimeSec,
-		CPUCores:      runtime.NumCPU(),
-		Arch:          runtime.GOARCH,
-		OS:            "windows",
-		PublicIP:      v4,
-		IPv4:          v4,
-		IPv6:          v6,
+		Version:        common.Version,
+		CPUPercent:     cpuPercent,
+		MemoryUsed:     memUsed,
+		MemoryTotal:    memTotal,
+		SwapUsed:       swapUsed,
+		SwapTotal:      swapTotal,
+		DiskUsed:       diskUsed,
+		DiskTotal:      diskTotal,
+		NetInSpeed:     simInSpeed,
+		NetOutSpeed:    simOutSpeed,
+		NetInTotal:     c.lastNetIn,
+		NetOutTotal:    c.lastNetOut,
+		TCPConnections: c.tcpConnections,
+		UDPSockets:     c.udpSockets,
+		Load1:          0.02,
+		Load5:          0.05,
+		Load15:         0.01,
+		UptimeSeconds:  uptimeSec,
+		CPUCores:       runtime.NumCPU(),
+		Arch:           runtime.GOARCH,
+		OS:             "windows",
+		PublicIP:       v4,
+		IPv4:           v4,
+		IPv6:           v6,
 	}, nil
+}
+
+// netstat is sampled only every 30 seconds to avoid starting a process on each report.
+func (c *WindowsCollector) sampleSocketCounts() {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	output, err := exec.CommandContext(ctx, "netstat", "-ano").Output()
+	if err != nil {
+		return
+	}
+	tcp, udp := 0, 0
+	for _, line := range strings.Split(string(output), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		switch strings.ToUpper(fields[0]) {
+		case "TCP":
+			if len(fields) >= 4 && strings.EqualFold(fields[3], "ESTABLISHED") {
+				tcp++
+			}
+		case "UDP":
+			if len(fields) >= 3 {
+				if _, err := strconv.Atoi(fields[len(fields)-1]); err == nil {
+					udp++
+				}
+			}
+		}
+	}
+	c.tcpConnections = tcp
+	c.udpSockets = udp
 }
 
 func detectWindowsPublicIPs() (ipv4 string, ipv6 string) {

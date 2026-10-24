@@ -141,6 +141,46 @@ func (c *LinuxCollector) sampleNet() (uint64, uint64) {
 	return totalIn, totalOut
 }
 
+// sampleSocketCounts reads kernel socket tables without spawning subprocesses.
+// TCP counts established sessions; UDP counts bound sockets (UDP is connectionless).
+func sampleSocketCounts() (tcp, udp int) {
+	for _, table := range []struct {
+		path      string
+		establish bool
+	}{
+		{path: "/proc/net/tcp", establish: true},
+		{path: "/proc/net/tcp6", establish: true},
+		{path: "/proc/net/udp"},
+		{path: "/proc/net/udp6"},
+	} {
+		file, err := os.Open(table.path)
+		if err != nil {
+			continue
+		}
+		scanner := bufio.NewScanner(file)
+		first := true
+		for scanner.Scan() {
+			if first {
+				first = false
+				continue
+			}
+			fields := strings.Fields(scanner.Text())
+			if len(fields) < 4 {
+				continue
+			}
+			if table.establish {
+				if fields[3] == "01" {
+					tcp++
+				}
+			} else {
+				udp++
+			}
+		}
+		_ = file.Close()
+	}
+	return tcp, udp
+}
+
 func (c *LinuxCollector) Collect() (*common.MetricsData, error) {
 	now := time.Now()
 	elapsed := now.Sub(c.lastSample).Seconds()
@@ -264,6 +304,7 @@ func (c *LinuxCollector) Collect() (*common.MetricsData, error) {
 	}
 
 	c.lastSample = now
+	tcpConnections, udpSockets := sampleSocketCounts()
 
 	// 1. 本地网卡扫描全局单播双栈 IP (毫秒级，不耗外网流量)
 	v4, v6 := detectLocalPublicIPs()
@@ -335,29 +376,31 @@ func (c *LinuxCollector) Collect() (*common.MetricsData, error) {
 	}
 
 	return &common.MetricsData{
-		Version:       common.Version,
-		CPUPercent:    cpuPercent,
-		MemoryUsed:    memUsed,
-		MemoryTotal:   memTotal,
-		SwapUsed:      swapUsed,
-		SwapTotal:     swapTotal,
-		DiskUsed:      diskUsed,
-		DiskTotal:     diskTotal,
-		NetInSpeed:    inSpeed,
-		NetOutSpeed:   outSpeed,
-		NetInTotal:    currNetIn,
-		NetOutTotal:   currNetOut,
-		Load1:         l1,
-		Load5:         l5,
-		Load15:        l15,
-		UptimeSeconds: uptime,
-		CPUCores:      runtime.NumCPU(),
-		Arch:          runtime.GOARCH,
-		OS:            c.cachedOS,
-		PublicIP:      c.cachedIP,
-		IPv4:          c.cachedIPv4,
-		IPv6:          c.cachedIPv6,
-		CountryCode:   c.cachedCountry,
+		Version:        common.Version,
+		CPUPercent:     cpuPercent,
+		MemoryUsed:     memUsed,
+		MemoryTotal:    memTotal,
+		SwapUsed:       swapUsed,
+		SwapTotal:      swapTotal,
+		DiskUsed:       diskUsed,
+		DiskTotal:      diskTotal,
+		NetInSpeed:     inSpeed,
+		NetOutSpeed:    outSpeed,
+		NetInTotal:     currNetIn,
+		NetOutTotal:    currNetOut,
+		TCPConnections: tcpConnections,
+		UDPSockets:     udpSockets,
+		Load1:          l1,
+		Load5:          l5,
+		Load15:         l15,
+		UptimeSeconds:  uptime,
+		CPUCores:       runtime.NumCPU(),
+		Arch:           runtime.GOARCH,
+		OS:             c.cachedOS,
+		PublicIP:       c.cachedIP,
+		IPv4:           c.cachedIPv4,
+		IPv6:           c.cachedIPv6,
+		CountryCode:    c.cachedCountry,
 	}, nil
 }
 

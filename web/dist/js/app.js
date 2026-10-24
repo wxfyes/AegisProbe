@@ -262,6 +262,10 @@
               <span class="label">网络</span>
               <span class="speed-text"><span class="speed-reading-up">↑ <span class="val-speed-up">${node.status.speed_up_str}</span></span><span class="speed-reading-down">↓ <span class="val-speed-down">${node.status.speed_down_str}</span></span></span>
             </div>
+            <div class="detail-row detail-connections" title="TCP 为已建立连接数；UDP 为绑定套接字数">
+              <span class="label">连接数</span>
+              <span class="connection-counts"><span>TCP <b class="val-tcp-connections">${node.status.tcp_connections || 0}</b></span><span>UDP <b class="val-udp-sockets">${node.status.udp_sockets || 0}</b></span></span>
+            </div>
             <div class="detail-row">
               <span class="label">累计流量</span>
               <span class="traffic-text"><span class="up">↑</span> <span class="val-traffic-up">${node.status.traffic_up_str}</span> <span class="down">↓</span> <span class="val-traffic-down">${node.status.traffic_down_str}</span></span>
@@ -353,6 +357,10 @@
         if (speedUp) speedUp.textContent = node.status.speed_up_str;
         const speedDown = card.querySelector('.val-speed-down');
         if (speedDown) speedDown.textContent = node.status.speed_down_str;
+		const tcpConnections = card.querySelector('.val-tcp-connections');
+		if (tcpConnections) tcpConnections.textContent = node.status.tcp_connections || 0;
+		const udpSockets = card.querySelector('.val-udp-sockets');
+		if (udpSockets) udpSockets.textContent = node.status.udp_sockets || 0;
 
         const trafficUp = card.querySelector('.val-traffic-up');
         if (trafficUp) trafficUp.textContent = node.status.traffic_up_str;

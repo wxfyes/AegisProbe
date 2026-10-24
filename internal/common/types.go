@@ -7,29 +7,31 @@ const Version = "v1.2.0"
 
 // MetricsData 定义受控端 Agent 采集到的原始指标
 type MetricsData struct {
-	Version       string  `json:"version,omitempty"`      // 探针受控端版本号 (如 v1.2.0)
-	CPUPercent    float64 `json:"cpu_percent"`            // CPU 使用率 0-100
-	MemoryUsed    uint64  `json:"memory_used"`            // 内存使用量 (bytes)
-	MemoryTotal   uint64  `json:"memory_total"`           // 内存总量 (bytes)
-	SwapUsed      uint64  `json:"swap_used"`              // SWAP 使用量 (bytes)
-	SwapTotal     uint64  `json:"swap_total"`             // SWAP 总量 (bytes)
-	DiskUsed      uint64  `json:"disk_used"`              // 磁盘使用量 (bytes)
-	DiskTotal     uint64  `json:"disk_total"`             // 磁盘总量 (bytes)
-	NetInSpeed    uint64  `json:"net_in_speed"`           // 瞬时下行速率 (bytes/s)
-	NetOutSpeed   uint64  `json:"net_out_speed"`          // 瞬时上行速率 (bytes/s)
-	NetInTotal    uint64  `json:"net_in_total"`           // 累计接收流量 (bytes)
-	NetOutTotal   uint64  `json:"net_out_total"`          // 累计发送流量 (bytes)
-	Load1         float64 `json:"load_1"`                 // 系统 1分钟负载
-	Load5         float64 `json:"load_5"`                 // 系统 5分钟负载
-	Load15        float64 `json:"load_15"`                // 系统 15分钟负载
-	UptimeSeconds uint64  `json:"uptime_seconds"`         // 系统开机运行秒数
-	CPUCores      int     `json:"cpu_cores"`              // CPU 物理核心数
-	Arch          string  `json:"arch"`                   // 架构 (如 amd64, arm64)
-	OS            string  `json:"os"`                     // 发行版 (如 debian, ubuntu, alpine, centos, windows)
-	PublicIP      string  `json:"public_ip,omitempty"`    // 探测到的公网 IP
-	IPv4          string  `json:"ipv4,omitempty"`         // 探测到的 IPv4 地址
-	IPv6          string  `json:"ipv6,omitempty"`         // 探测到的 IPv6 地址
-	CountryCode   string  `json:"country_code,omitempty"` // 探测到的国家代码 (如 HK, TW, US)
+	Version        string  `json:"version,omitempty"`      // 探针受控端版本号 (如 v1.2.0)
+	CPUPercent     float64 `json:"cpu_percent"`            // CPU 使用率 0-100
+	MemoryUsed     uint64  `json:"memory_used"`            // 内存使用量 (bytes)
+	MemoryTotal    uint64  `json:"memory_total"`           // 内存总量 (bytes)
+	SwapUsed       uint64  `json:"swap_used"`              // SWAP 使用量 (bytes)
+	SwapTotal      uint64  `json:"swap_total"`             // SWAP 总量 (bytes)
+	DiskUsed       uint64  `json:"disk_used"`              // 磁盘使用量 (bytes)
+	DiskTotal      uint64  `json:"disk_total"`             // 磁盘总量 (bytes)
+	NetInSpeed     uint64  `json:"net_in_speed"`           // 瞬时下行速率 (bytes/s)
+	NetOutSpeed    uint64  `json:"net_out_speed"`          // 瞬时上行速率 (bytes/s)
+	NetInTotal     uint64  `json:"net_in_total"`           // 累计接收流量 (bytes)
+	NetOutTotal    uint64  `json:"net_out_total"`          // 累计发送流量 (bytes)
+	TCPConnections int     `json:"tcp_connections"`        // 当前已建立 TCP 连接数
+	UDPSockets     int     `json:"udp_sockets"`            // 当前 UDP 套接字数
+	Load1          float64 `json:"load_1"`                 // 系统 1分钟负载
+	Load5          float64 `json:"load_5"`                 // 系统 5分钟负载
+	Load15         float64 `json:"load_15"`                // 系统 15分钟负载
+	UptimeSeconds  uint64  `json:"uptime_seconds"`         // 系统开机运行秒数
+	CPUCores       int     `json:"cpu_cores"`              // CPU 物理核心数
+	Arch           string  `json:"arch"`                   // 架构 (如 amd64, arm64)
+	OS             string  `json:"os"`                     // 发行版 (如 debian, ubuntu, alpine, centos, windows)
+	PublicIP       string  `json:"public_ip,omitempty"`    // 探测到的公网 IP
+	IPv4           string  `json:"ipv4,omitempty"`         // 探测到的 IPv4 地址
+	IPv6           string  `json:"ipv6,omitempty"`         // 探测到的 IPv6 地址
+	CountryCode    string  `json:"country_code,omitempty"` // 探测到的国家代码 (如 HK, TW, US)
 }
 
 // ReportPayload 是 Agent 纯单向 POST 的请求体（无任何反向控制参数）
@@ -145,6 +147,8 @@ type NodeStatusView struct {
 	DiskPct        float64 `json:"disk_pct"`         // 硬盘占用百分比
 	SpeedUpStr     string  `json:"speed_up_str"`     // 格式化瞬时上传速率 (如 "12.48 KB/s")
 	SpeedDownStr   string  `json:"speed_down_str"`   // 格式化瞬时下载速率 (如 "14.11 KB/s")
+	TCPConnections int     `json:"tcp_connections"`  // 当前已建立 TCP 连接数
+	UDPSockets     int     `json:"udp_sockets"`      // 当前 UDP 套接字数
 	TrafficUpStr   string  `json:"traffic_up_str"`   // 格式化累计上传流量 (如 "95.31 GB")
 	TrafficDownStr string  `json:"traffic_down_str"` // 格式化累计下载流量 (如 "98.87 GB")
 	LoadStr        string  `json:"load_str"`         // 负载字符串 (如 "0.00 | 0.01 | 0.00")
