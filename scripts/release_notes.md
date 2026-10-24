@@ -1,8 +1,12 @@
-## 🛡️ 天阙·神盾安全探针 (AegisProbe) v1.2.0
+## 🛡️ 天阙·神盾安全探针 (AegisProbe) v1.2.1
 
 专为高敏感节点集群打造的下一代**轻量化、零 GPU 负担、零下行渗透通道、物理级 IP 脱敏**的自研服务器探针系统。
 
 ---
+
+### ✨ v1.2.1 更新特性
+- **节点连接数监控**：卡片网络行下新增 TCP 已建立连接数与 UDP 套接字数；Linux 从 `/proc` 采样，Windows 每 30 秒采样并缓存。
+- **连接数采集需升级 Agent**：已安装节点不会随 Release 自动升级，执行 `curl -fsSL https://github.com/wxfyes/AegisProbe/releases/latest/download/install.sh | bash -s -- --update-agent` 后开始上报。
 
 ### ✨ v1.2.0 重大更新特性
 1. **主控与被控独立运维与更新闭环**：
