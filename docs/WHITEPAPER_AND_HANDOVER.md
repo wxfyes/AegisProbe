@@ -1,9 +1,10 @@
 # 🛡️ 天阙·神盾安全探针 (AegisProbe) 架构设计与研发推进白皮书
 
-> **文档版本**: `v1.1.0`  
+> **文档版本**: `v1.2.0`  
 > **更新时间**: 2026-10-24  
 > **维护项目**: 天阙安全实验室 (TianQue Security Lab)  
 > **开源仓库**: [https://github.com/wxfyes/AegisProbe](https://github.com/wxfyes/AegisProbe)  
+> **专属技能**: `~/.gemini/config/skills/tianque-probe/SKILL.md`  
 > **交接目标**: 为所有参与该项目的后续开发者与 AI 助手提供 100% 透明的技术架构、已交付功能、避坑指南及下一步演进蓝图。
 
 ---
@@ -13,7 +14,7 @@
 2. [技术选型与全景架构](#2-技术选型与全景架构)
 3. [核心功能清单与当前跟进状态](#3-核心功能清单与当前跟进状态)
 4. [核心避坑指南与深度技术细节](#4-核心避坑指南与深度技术细节)
-5. [软路由自建国内测活探针方案 (进行中)](#5-软路由自建国内测活探针方案-进行中)
+5. [软路由自建国内测活探针方案 (Aegis-Ping，已全面落地)](#5-软路由自建国内测活探针方案-aegis-ping已全面落地)
 6. [标准研发、编译与发布流水线](#6-标准研发编译与发布流水线)
 
 ---
@@ -34,6 +35,8 @@
    - 受控端 Agent 内存占用稳定在 **< 5MB**，CPU 使用率 **< 0.1%**，老旧设备、低配 VPS、软路由长期挂机零发热。
 4. **单二进制纯静态内嵌交付**：
    - 前端大屏与后台资源通过 Go `embed.FS` 编译进单一独立服务端二进制，彻底杜绝静态资源丢失与路径依赖。
+5. **国内连通性专属私有闭环**：
+   - 彻底摒弃动辄超时、限流、误报的公共 API，由用户自建的极轻量 `aegis-ping` 微探针（部署在家宽软路由/国内轻量机）承载 100% 真实的纯 ICMP Ping 探测。
 
 ---
 
@@ -61,8 +64,8 @@ flowchart TD
         UI2["管理控制台 (双栈展示/拖拽排序/灾备恢复)"]
     end
 
-    subgraph Domestic["国内自建测活节点 (软路由/家宽)"]
-        Router["家庭软路由 Aegis-Ping 微服务"]
+    subgraph Domestic["国内专属测活节点 (家宽软路由 / 真实出口)"]
+        Router["家庭软路由 Aegis-Ping 微服务 (:38921)"]
     end
 
     A1 --"单向POST汇报指标"--> H1
@@ -72,10 +75,10 @@ flowchart TD
     H1 --> S1
     S1 --> UI1
     C1 --> UI2
-    GFW --"异步定时巡检"--> Router
+    GFW --"异步定时巡检 (带Token)"--> Router
     GFW --"更新连通性状态"--> S1
     S1 --"触发掉线/到期"--> TG
-    Router --"纯ICMP Ping/TCPing"--> Clients
+    Router --"纯ICMP Ping (免端口)"--> Clients
 ```
 
 ---
@@ -94,7 +97,7 @@ flowchart TD
 | **管理后台** | 测活配置与周期调控 | 支持外部 API 模板、自动正则容错、预设 1~24 小时周期与【⚡立即测活】按钮 | ✅ 已交付 |
 | **受控 Agent** | 4 重多源冗余双栈补齐 | 网卡全局单播扫描 + 轮询 `ip.sb`、`ident.me`、`ipify`、`icanhazip` 自动补齐 | ✅ 已交付 |
 | **一键脚本** | 全功能一体化安装与热更 | 支持 `--master`、`--agent`，新增 `--update-agent` 原地无感秒级热更 | ✅ 已交付 |
-| **国内测活** | 软路由自建轻量微探针 | 打造 < 2MB 独立 `aegis-ping` 微服务，实现纯 ICMP 免端口超精准测活 | 🚀 **本阶段进行中** |
+| **家宽微探针** | Aegis-Ping 自建测活服务 | 纯 Go 独立二进制 (< 2MB)，纯 ICMP Ping 免端口依赖，OpenWrt 自动防火墙放行 | ✅ **已全面实测交付** |
 
 ---
 
@@ -107,30 +110,40 @@ flowchart TD
 
 ### 4.2 为什么测活会出现“全部被墙”？
 1. **误将占位符写死为 `{80}`**：
-   - 错误写法：`...&port={80}`（带大括号），第三方 API 无法解析字符串 `"{80}"` 导致直接报错失败；
-   - 现已增加服务端正则容错，自动剥除大括号清洗为正常数字；
+   - 错误写法：`...&port={80}`（带大括号），第三方 API 无法解析字符串 `"{80}"` 导致直接报错失败；服务端现已增加正则容错，自动剥除大括号清洗为正常数字；
 2. **小鸡根本未开放 80 端口（最关键根因）**：
    - 绝大多数中转/测试 VPS 根本没有安装 Web 服务（Nginx/Apache），小鸡操作系统的 80 端口根本没有监听；
    - TCPing 是向特定端口发起 TCP 三次握手，探测未开放的端口会遭到小鸡内核拒连（RST），从而被误判为被墙；
-   - 常规 VPS 默认连通且开放的端口是 SSH（22 端口）；每个节点可以在后台自由设置专属测活端口。
+3. **彻底根治方案**：使用 **Aegis-Ping 纯 ICMP 模式**，直接向小鸡 IP 发起系统 Ping，**完全不需要小鸡开放任何端口**，彻底杜绝误报。
+
+### 4.3 脚本管道执行与国内镜像避坑
+1. **管道 `curl | bash` 读空退出**：管道流导致 stdin 读到 EOF，旧脚本 `read` 命令返回 1，触发顶部 `set -e` 导致直接退出；已修复为非交互模式默认自动取值，终端模式重定向从 `/dev/tty` 读取；
+2. **国内下载 GitHub 假死**：`mirror.ghproxy.com` 已停运；现全面采用 `ghfast.top` 与 `ghproxy.net` 极速双镜像轮询并附带进度条；
+3. **URL 格式规范**：浏览器访问端口时切勿在域名后加多余的斜杠（`http://域名:38921/health` 而非 `http://域名/:38921/health`）。
 
 ---
 
-## 5. 软路由自建国内测活探针方案 (进行中)
+## 5. 软路由自建国内测活探针方案 (Aegis-Ping，已全面落地)
 
-### 5.1 方案背景与意义
-第三方公共免费接口（如 xxapi）存在频控严格、经常超时宕机、无法执行 ICMP Ping 的缺陷。  
-用户自家拥有带有**公网 IP 的家庭宽带软路由（OpenWrt/iStoreOS）**，以此作为测活节点是业内公认的终极最优解：
+### 5.1 方案架构与价值
 - **零频控限制**：完全私有，随心调用；
 - **支持纯 ICMP Ping（免端口依赖）**：小鸡无论是否开放 22/80 端口，只要机器在线就能 ping 通，彻底杜绝端口关闭误报！
 - **真实度 100%**：纯正中国大陆民用宽带直连海外，结果最具公信力。
+- **资源极轻**：全架构单文件二进制仅 1.6~1.9 MB，运行时内存 < 2 MB，CPU 几乎为 0%。
 
-### 5.2 `aegis-ping` 微服务技术设计
-- **体积与资源**：纯 Go 静态编译，单文件体积 **< 2MB**，内存占用 **< 2MB**；
-- **核心接口**：
-  1. `GET /ping?address={ip}&token={token}`：调用系统级 ICMP Ping，零端口依赖；
-  2. `GET /tcping?address={ip}&port={port}&token={token}`：针对特定端口发起 TCP 握手。
-- **安全性**：内置简易预共享密钥 Token 校验，防止被公网爬虫扫描利用。
+### 5.2 核心接口一览
+- `GET /health`：免鉴权健康检查；
+- `GET /ping?address={ip}&token={token}`：**纯 ICMP Ping（首选推荐）**；
+- `GET /tcping?address={ip}&port={port}&token={token}`：TCP 三次握手探测。
+
+### 5.3 软路由一键安装与运维命令
+```bash
+# 一键安装 (自动放行 iStoreOS/OpenWrt 防火墙端口)
+curl -fsSL https://ghfast.top/https://github.com/wxfyes/AegisProbe/releases/latest/download/install_aegis_ping.sh | bash -s -- --port=38921 --token=AegisSuperSecret2026
+
+# 查看实时测活日志 (iStoreOS 终端)
+logread -f -e aegis
+```
 
 ---
 
@@ -142,7 +155,7 @@ flowchart TD
 # 1. 前端构建产物同步至 Go embed 目录
 Copy-Item -Path "web\dist\*" -Destination "internal\server\web\dist\" -Recurse -Force
 
-# 2. 本地全架构交叉编译 (10秒内完成输出至 bin/)
+# 2. 本地全架构交叉编译 (10秒内完成输出至 bin/，覆盖 Server, Agent, Aegis-Ping)
 powershell -File scripts/build_all.ps1
 
 # 3. 极速发布至 GitHub Release (清理旧资产并秒级直传)
