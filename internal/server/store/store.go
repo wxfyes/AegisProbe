@@ -121,6 +121,31 @@ func (s *Store) GetNodeRealInfo(nodeID string) (ipv4 string, ipv6 string, os str
 	return st.IPv4, st.IPv6, st.LatestMetrics.OS, ver, isOnline
 }
 
+func (s *Store) GetNodeCountryCode(nodeID string) string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if st, exists := s.states[nodeID]; exists {
+		return strings.ToUpper(strings.TrimSpace(st.LatestMetrics.CountryCode))
+	}
+	return ""
+}
+
+func (s *Store) GetOnlineNodeIDs(nodes []common.NodeConfig, threshold time.Duration) map[string]bool {
+	if threshold <= 0 {
+		threshold = 60 * time.Second
+	}
+	now := time.Now()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	online := make(map[string]bool, len(nodes))
+	for _, node := range nodes {
+		if state, exists := s.states[node.ID]; exists && now.Sub(state.LastSeen) <= threshold {
+			online[node.ID] = true
+		}
+	}
+	return online
+}
+
 // CheckHeartbeats 定时扫描节点心跳状态，触发掉线或上线恢复
 func (s *Store) CheckHeartbeats(nodes []common.NodeConfig, offlineThreshold time.Duration) {
 	s.mu.Lock()

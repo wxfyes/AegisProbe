@@ -264,12 +264,17 @@ func (h *RouterHandler) handleAdminConfig(w http.ResponseWriter, r *http.Request
 		adminNodes := make([]AdminNodeView, 0, len(cfg.Nodes))
 		for _, n := range cfg.Nodes {
 			ipv4, ipv6, osName, ver, isOnline := h.store.GetNodeRealInfo(n.ID)
+			adminNode := n
+			if countryCode := h.store.GetNodeCountryCode(n.ID); countryCode != "" {
+				adminNode.Region = countryCode
+				adminNode.Flag = common.CountryCodeToFlag(countryCode)
+			}
 			realIP := ipv4
 			if realIP == "" {
 				realIP = ipv6
 			}
 			adminNodes = append(adminNodes, AdminNodeView{
-				NodeConfig: n,
+				NodeConfig: adminNode,
 				RealIP:     realIP,
 				IPv4:       ipv4,
 				IPv6:       ipv6,

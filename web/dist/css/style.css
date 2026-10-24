@@ -840,6 +840,117 @@ body {
   border-color: var(--accent-blue);
 }
 
+.auto-renew-panel {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  border: 1px solid var(--panel-border);
+  border-radius: 9px;
+  background: var(--card-bg);
+}
+
+.auto-renew-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.auto-renew-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.auto-renew-copy strong {
+  color: var(--text-main);
+  font-size: 13px;
+}
+
+.auto-renew-copy small {
+  color: var(--text-sub);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.auto-renew-switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.auto-renew-switch-track {
+  position: relative;
+  width: 40px;
+  height: 23px;
+  flex: 0 0 40px;
+  border-radius: 999px;
+  background: var(--text-muted);
+  transition: background 0.18s ease;
+}
+
+.auto-renew-switch-track::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.18s ease;
+}
+
+.auto-renew-switch input:checked + .auto-renew-switch-track {
+  background: var(--accent-green);
+}
+
+.auto-renew-switch input:checked + .auto-renew-switch-track::after {
+  transform: translateX(17px);
+}
+
+.auto-renew-switch input:focus-visible + .auto-renew-switch-track {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+.auto-renew-period-group {
+  width: 112px;
+  flex: 0 0 112px;
+  margin-bottom: 0;
+}
+
+.auto-renew-period-group .form-input {
+  padding: 7px 9px;
+}
+
+.node-expiry-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.auto-renew-badge {
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: #047857;
+  background: #d1fae5;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+[data-theme="dark"] .auto-renew-badge {
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, 0.14);
+}
+
 .btn-primary {
   width: 100%;
   padding: 11px;
@@ -934,6 +1045,17 @@ body {
 
   .card-details {
     font-size: 11.5px;
+  }
+
+  .auto-renew-panel {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .auto-renew-period-group {
+    width: 100%;
+    flex: 1 1 auto;
   }
 
   .modal-box {

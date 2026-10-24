@@ -228,6 +228,11 @@ func (m *Manager) UpsertNode(node common.NodeConfig) error {
 	if node.ProbePort <= 0 {
 		node.ProbePort = 22
 	}
+	if strings.TrimSpace(node.RenewalPeriod) == "" {
+		node.RenewalPeriod = common.InferRenewalPeriod(node.Price)
+	} else {
+		node.RenewalPeriod = common.NormalizeRenewalPeriod(node.RenewalPeriod)
+	}
 
 	found := false
 	for i, n := range m.cfg.Nodes {
@@ -242,6 +247,89 @@ func (m *Manager) UpsertNode(node common.NodeConfig) error {
 	}
 
 	return m.saveLocked()
+}
+
+type AutoRenewalEvent struct {
+	NodeName string
+	Previous string
+	Next     string
+	Period   string
+}
+
+// RenewExpiredOnlineNodes extends an expired node only when auto-renew is enabled
+// and its agent has reported within the configured online window.
+func (m *Manager) RenewExpiredOnlineNodes(onlineNodes map[string]bool, now time.Time) ([]AutoRenewalEvent, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	originalNodes := append([]common.NodeConfig(nil), m.cfg.Nodes...)
+	events := make([]AutoRenewalEvent, 0)
+	for i := range m.cfg.Nodes {
+		node := &m.cfg.Nodes[i]
+		if !node.AutoRenew || !onlineNodes[node.ID] || strings.TrimSpace(node.ExpireDate) == "" {
+			continue
+		}
+
+		expiry, layout, ok := parseExpireDate(node.ExpireDate, now.Location())
+		if !ok || !expiry.Before(today) {
+			continue
+		}
+
+		period := node.RenewalPeriod
+		if strings.TrimSpace(period) == "" {
+			period = common.InferRenewalPeriod(node.Price)
+		}
+		period = common.NormalizeRenewalPeriod(period)
+		next := addRenewalPeriod(today, period)
+		previousDate := node.ExpireDate
+		node.ExpireDate = next.Format(layout)
+		node.RenewalPeriod = period
+		events = append(events, AutoRenewalEvent{
+			NodeName: node.Name,
+			Previous: previousDate,
+			Next:     node.ExpireDate,
+			Period:   period,
+		})
+	}
+
+	if len(events) == 0 {
+		return nil, nil
+	}
+	if err := m.saveLocked(); err != nil {
+		m.cfg.Nodes = originalNodes
+		return nil, err
+	}
+	return events, nil
+}
+
+func parseExpireDate(value string, location *time.Location) (time.Time, string, bool) {
+	for _, layout := range []string{"2006/01/02", "2006-01-02"} {
+		parsed, err := time.ParseInLocation(layout, strings.TrimSpace(value), location)
+		if err == nil {
+			return parsed, layout, true
+		}
+	}
+	return time.Time{}, "", false
+}
+
+func addRenewalPeriod(base time.Time, period string) time.Time {
+	months := 1
+	switch period {
+	case common.RenewalPeriodQuarter:
+		months = 3
+	case common.RenewalPeriodHalfYear:
+		months = 6
+	case common.RenewalPeriodYear:
+		months = 12
+	}
+	firstOfMonth := time.Date(base.Year(), base.Month()+time.Month(months), 1, 0, 0, 0, 0, base.Location())
+	lastDay := firstOfMonth.AddDate(0, 1, -1).Day()
+	day := base.Day()
+	if day > lastDay {
+		day = lastDay
+	}
+	return time.Date(firstOfMonth.Year(), firstOfMonth.Month(), day, 0, 0, 0, 0, base.Location())
 }
 
 func (m *Manager) DeleteNode(id string) error {

@@ -9,26 +9,26 @@ const Version = "v1.2.0"
 type MetricsData struct {
 	Version       string  `json:"version,omitempty"`      // 探针受控端版本号 (如 v1.2.0)
 	CPUPercent    float64 `json:"cpu_percent"`            // CPU 使用率 0-100
-	MemoryUsed    uint64  `json:"memory_used"`    // 内存使用量 (bytes)
-	MemoryTotal   uint64  `json:"memory_total"`   // 内存总量 (bytes)
-	SwapUsed      uint64  `json:"swap_used"`      // SWAP 使用量 (bytes)
-	SwapTotal     uint64  `json:"swap_total"`     // SWAP 总量 (bytes)
-	DiskUsed      uint64  `json:"disk_used"`      // 磁盘使用量 (bytes)
-	DiskTotal     uint64  `json:"disk_total"`     // 磁盘总量 (bytes)
-	NetInSpeed    uint64  `json:"net_in_speed"`   // 瞬时下行速率 (bytes/s)
-	NetOutSpeed   uint64  `json:"net_out_speed"`  // 瞬时上行速率 (bytes/s)
-	NetInTotal    uint64  `json:"net_in_total"`   // 累计接收流量 (bytes)
-	NetOutTotal   uint64  `json:"net_out_total"`  // 累计发送流量 (bytes)
-	Load1         float64 `json:"load_1"`         // 系统 1分钟负载
-	Load5         float64 `json:"load_5"`         // 系统 5分钟负载
-	Load15        float64 `json:"load_15"`        // 系统 15分钟负载
-	UptimeSeconds uint64  `json:"uptime_seconds"` // 系统开机运行秒数
-	CPUCores      int     `json:"cpu_cores"`      // CPU 物理核心数
-	Arch          string  `json:"arch"`           // 架构 (如 amd64, arm64)
-	OS            string  `json:"os"`             // 发行版 (如 debian, ubuntu, alpine, centos, windows)
-	PublicIP      string  `json:"public_ip,omitempty"`   // 探测到的公网 IP
-	IPv4          string  `json:"ipv4,omitempty"`        // 探测到的 IPv4 地址
-	IPv6          string  `json:"ipv6,omitempty"`        // 探测到的 IPv6 地址
+	MemoryUsed    uint64  `json:"memory_used"`            // 内存使用量 (bytes)
+	MemoryTotal   uint64  `json:"memory_total"`           // 内存总量 (bytes)
+	SwapUsed      uint64  `json:"swap_used"`              // SWAP 使用量 (bytes)
+	SwapTotal     uint64  `json:"swap_total"`             // SWAP 总量 (bytes)
+	DiskUsed      uint64  `json:"disk_used"`              // 磁盘使用量 (bytes)
+	DiskTotal     uint64  `json:"disk_total"`             // 磁盘总量 (bytes)
+	NetInSpeed    uint64  `json:"net_in_speed"`           // 瞬时下行速率 (bytes/s)
+	NetOutSpeed   uint64  `json:"net_out_speed"`          // 瞬时上行速率 (bytes/s)
+	NetInTotal    uint64  `json:"net_in_total"`           // 累计接收流量 (bytes)
+	NetOutTotal   uint64  `json:"net_out_total"`          // 累计发送流量 (bytes)
+	Load1         float64 `json:"load_1"`                 // 系统 1分钟负载
+	Load5         float64 `json:"load_5"`                 // 系统 5分钟负载
+	Load15        float64 `json:"load_15"`                // 系统 15分钟负载
+	UptimeSeconds uint64  `json:"uptime_seconds"`         // 系统开机运行秒数
+	CPUCores      int     `json:"cpu_cores"`              // CPU 物理核心数
+	Arch          string  `json:"arch"`                   // 架构 (如 amd64, arm64)
+	OS            string  `json:"os"`                     // 发行版 (如 debian, ubuntu, alpine, centos, windows)
+	PublicIP      string  `json:"public_ip,omitempty"`    // 探测到的公网 IP
+	IPv4          string  `json:"ipv4,omitempty"`         // 探测到的 IPv4 地址
+	IPv6          string  `json:"ipv6,omitempty"`         // 探测到的 IPv6 地址
 	CountryCode   string  `json:"country_code,omitempty"` // 探测到的国家代码 (如 HK, TW, US)
 }
 
@@ -42,18 +42,54 @@ type ReportPayload struct {
 
 // NodeConfig 代表由服务端后台管理的受控节点元数据
 type NodeConfig struct {
-	ID         string `json:"id"`               // 节点唯一ID (如 node_01)
-	Token      string `json:"token"`            // 鉴权 Token
-	Name       string `json:"name"`             // 节点展示名 (如 "香港-30M-122")
-	Region     string `json:"region"`           // 地区代码 (如 "HK", "TW", "US", "JP")
-	Flag       string `json:"flag"`             // 国旗 Emoji (如 "🇭🇰")
-	OS         string `json:"os"`               // 发行版图标 (如 "debian", "ubuntu", "alpine", "centos", "windows")
-	Group      string `json:"group"`            // 所属分组 (如 "中转", "亚洲", "直连", "北美洲", "欧洲", "DNS", "站点")
-	Price      string `json:"price"`            // 计费标签 (如 "$29.99/月")
-	ExpireDate string `json:"expire_date"`      // 到期日期 (格式 "YYYY/MM/DD" 或 "YYYY-MM-DD")
-	SortOrder  int    `json:"sort_order"`       // 排序权重
-	ProbePort  int    `json:"probe_port,omitempty"` // 测活探测端口 (默认 22)
-	Remark     string `json:"remark,omitempty"` // 内部备注 (绝不返回给大屏)
+	ID            string `json:"id"`                       // 节点唯一ID (如 node_01)
+	Token         string `json:"token"`                    // 鉴权 Token
+	Name          string `json:"name"`                     // 节点展示名 (如 "香港-30M-122")
+	Region        string `json:"region"`                   // 地区代码 (如 "HK", "TW", "US", "JP")
+	Flag          string `json:"flag"`                     // 国旗 Emoji (如 "🇭🇰")
+	OS            string `json:"os"`                       // 发行版图标 (如 "debian", "ubuntu", "alpine", "centos", "windows")
+	Group         string `json:"group"`                    // 所属分组 (如 "中转", "亚洲", "直连", "北美洲", "欧洲", "DNS", "站点")
+	Price         string `json:"price"`                    // 计费标签 (如 "$29.99/月")
+	ExpireDate    string `json:"expire_date"`              // 到期日期 (格式 "YYYY/MM/DD" 或 "YYYY-MM-DD")
+	AutoRenew     bool   `json:"auto_renew"`               // 到期且节点在线时自动顺延
+	RenewalPeriod string `json:"renewal_period,omitempty"` // month / quarter / half_year / year
+	SortOrder     int    `json:"sort_order"`               // 排序权重
+	ProbePort     int    `json:"probe_port,omitempty"`     // 测活探测端口 (默认 22)
+	Remark        string `json:"remark,omitempty"`         // 内部备注 (绝不返回给大屏)
+}
+
+const (
+	RenewalPeriodMonth    = "month"
+	RenewalPeriodQuarter  = "quarter"
+	RenewalPeriodHalfYear = "half_year"
+	RenewalPeriodYear     = "year"
+)
+
+func NormalizeRenewalPeriod(period string) string {
+	switch strings.ToLower(strings.TrimSpace(period)) {
+	case RenewalPeriodQuarter:
+		return RenewalPeriodQuarter
+	case RenewalPeriodHalfYear:
+		return RenewalPeriodHalfYear
+	case RenewalPeriodYear:
+		return RenewalPeriodYear
+	default:
+		return RenewalPeriodMonth
+	}
+}
+
+func InferRenewalPeriod(price string) string {
+	value := strings.ToLower(strings.TrimSpace(price))
+	switch {
+	case strings.Contains(value, "半年"), strings.Contains(value, "6个月"), strings.Contains(value, "semiannual"), strings.Contains(value, "semi-annual"):
+		return RenewalPeriodHalfYear
+	case strings.Contains(value, "季度"), strings.Contains(value, "季"), strings.Contains(value, "quarter"), strings.Contains(value, "qtr"):
+		return RenewalPeriodQuarter
+	case strings.Contains(value, "年"), strings.Contains(value, "year"), strings.Contains(value, "annual"):
+		return RenewalPeriodYear
+	default:
+		return RenewalPeriodMonth
+	}
 }
 
 // ServerConfig 服务端全局配置模型
@@ -118,12 +154,12 @@ type NodeStatusView struct {
 
 // NodeCardView 大屏单节点卡片视图模型 (物理级剔除 IP、MAC、私网地址)
 type NodeCardView struct {
-	ID       string           `json:"id"`
-	Name     string           `json:"name"`
-	Region   string           `json:"region"`
-	Flag     string           `json:"flag"`
-	OS       string           `json:"os"`
-	Group    string           `json:"group"`
+	ID        string           `json:"id"`
+	Name      string           `json:"name"`
+	Region    string           `json:"region"`
+	Flag      string           `json:"flag"`
+	OS        string           `json:"os"`
+	Group     string           `json:"group"`
 	Billing   NodeBillingView  `json:"billing"`
 	Hardware  NodeHardwareView `json:"hardware"`
 	Status    NodeStatusView   `json:"status"`

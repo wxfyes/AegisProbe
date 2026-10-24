@@ -82,6 +82,14 @@ func main() {
 				currentCfg := cfgMgr.GetConfig()
 				threshold := time.Duration(currentCfg.OfflineSec) * time.Second
 				st.CheckHeartbeats(currentCfg.Nodes, threshold)
+				onlineNodes := st.GetOnlineNodeIDs(currentCfg.Nodes, threshold)
+				renewals, err := cfgMgr.RenewExpiredOnlineNodes(onlineNodes, time.Now())
+				if err != nil {
+					log.Printf("自动续费更新失败: %v", err)
+				}
+				for _, event := range renewals {
+					log.Printf("自动续费: 节点 %q 到期日从 %s 顺延至 %s (%s)", event.NodeName, event.Previous, event.Next, event.Period)
+				}
 			}
 		}
 	}()

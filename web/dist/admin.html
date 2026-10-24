@@ -561,6 +561,26 @@
           </div>
         </div>
 
+        <div class="auto-renew-panel">
+          <label class="auto-renew-switch" for="nodeAutoRenew">
+            <span class="auto-renew-copy">
+              <strong>自动续费</strong>
+              <small>到期后探针在线时自动顺延面板日期；不会向服务商实际扣款。</small>
+            </span>
+            <input type="checkbox" id="nodeAutoRenew">
+            <span class="auto-renew-switch-track" aria-hidden="true"></span>
+          </label>
+          <div class="form-group auto-renew-period-group">
+            <label class="form-label" for="nodeRenewalPeriod">续费周期</label>
+            <select id="nodeRenewalPeriod" class="form-input">
+              <option value="month">每月</option>
+              <option value="quarter">每季度</option>
+              <option value="half_year">每半年</option>
+              <option value="year">每年</option>
+            </select>
+          </div>
+        </div>
+
         <div class="grid-2">
           <div class="form-group">
             <label class="form-label">认证 Token (留空自动生成)</label>

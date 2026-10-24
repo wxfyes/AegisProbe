@@ -54,6 +54,8 @@
     nodeGroup: document.getElementById('nodeGroup'),
     nodePrice: document.getElementById('nodePrice'),
     nodeExpireDate: document.getElementById('nodeExpireDate'),
+    nodeAutoRenew: document.getElementById('nodeAutoRenew'),
+    nodeRenewalPeriod: document.getElementById('nodeRenewalPeriod'),
     nodeToken: document.getElementById('nodeToken'),
     nodeProbePort: document.getElementById('nodeProbePort'),
   };
@@ -111,6 +113,18 @@
   // 5. 使用与大屏一致的完整离线国家/地区旗帜库
   function getFlagSVG(code, name, region) {
     return window.TianQueFlags.getFlagHTML(code, name, region);
+  }
+
+  function inferRenewalPeriod(price) {
+    const value = String(price || '').toLowerCase();
+    if (value.includes('半年') || value.includes('6个月') || value.includes('semiannual') || value.includes('semi-annual')) return 'half_year';
+    if (value.includes('季度') || value.includes('季') || value.includes('quarter') || value.includes('qtr')) return 'quarter';
+    if (value.includes('年') || value.includes('year') || value.includes('annual')) return 'year';
+    return 'month';
+  }
+
+  function renewalPeriodLabel(period) {
+    return ({ month: '每月', quarter: '每季度', half_year: '每半年', year: '每年' })[period] || '每月';
   }
   // 6. 加载配置与节点列表
   async function loadAdminConfig() {
@@ -273,7 +287,12 @@
           </td>
           <td><span class="capsule capsule-days green">${escapeHtml(n.group || '默认')}</span></td>
           <td><span class="capsule capsule-price">${escapeHtml(n.price || '--')}</span></td>
-          <td><span style="font-family: var(--font-mono); font-size: 12px; color: var(--text-sub);">${escapeHtml(n.expire_date || '--')}</span></td>
+          <td>
+            <div class="node-expiry-cell">
+              <span style="font-family: var(--font-mono); font-size: 12px; color: var(--text-sub);">${escapeHtml(n.expire_date || '--')}</span>
+              ${n.auto_renew ? `<span class="auto-renew-badge" title="到期且在线时按${renewalPeriodLabel(n.renewal_period)}顺延">自动续费 · ${renewalPeriodLabel(n.renewal_period)}</span>` : ''}
+            </div>
+          </td>
           <td style="text-align: right;">
             <div style="display: inline-flex; gap: 6px;">
               <button class="btn-sm" onclick="window.showInstallCmd('${escapeHtml(n.id)}')">一键命令</button>
@@ -550,6 +569,8 @@
     dom.nodeGroup.value = '中转';
     dom.nodePrice.value = '$29.99/月';
     dom.nodeExpireDate.value = '';
+    dom.nodeAutoRenew.checked = false;
+    dom.nodeRenewalPeriod.value = inferRenewalPeriod(dom.nodePrice.value);
     dom.nodeToken.value = '';
     if (dom.nodeProbePort) dom.nodeProbePort.value = '22';
 
@@ -573,6 +594,8 @@
     dom.nodeGroup.value = n.group || '中转';
     dom.nodePrice.value = n.price || '$29.99/月';
     dom.nodeExpireDate.value = (n.expire_date || '').replace(/\//g, '-');
+    dom.nodeAutoRenew.checked = Boolean(n.auto_renew);
+    dom.nodeRenewalPeriod.value = n.renewal_period || inferRenewalPeriod(n.price);
     dom.nodeToken.value = n.token || '';
     if (dom.nodeProbePort) dom.nodeProbePort.value = n.probe_port || 22;
 
@@ -592,6 +615,8 @@
       group: dom.nodeGroup.value.trim(),
       price: dom.nodePrice.value.trim(),
       expire_date: dom.nodeExpireDate.value.replace(/-/g, '/'),
+      auto_renew: dom.nodeAutoRenew.checked,
+      renewal_period: dom.nodeRenewalPeriod.value,
       token: dom.nodeToken.value.trim(),
       probe_port: parseInt(dom.nodeProbePort ? dom.nodeProbePort.value : '22', 10) || 22
     };
