@@ -115,14 +115,10 @@ func handlePing(w http.ResponseWriter, r *http.Request) {
 				Latency: fmt.Sprintf("%dms", latencyMs),
 			},
 		})
-		if verbose {
-			log.Printf("[ping] %s → OK  %dms", addr, latencyMs)
-		}
+		log.Printf("📡 [ICMP Ping] 目标: %-15s | 结果: 畅通 ✓ | 延迟: %dms", addr, latencyMs)
 	} else {
 		writeJSON(w, 200, Result{Code: -2, Msg: "失败", Data: []struct{}{}})
-		if verbose {
-			log.Printf("[ping] %s → FAIL", addr)
-		}
+		log.Printf("⚠️ [ICMP Ping] 目标: %-15s | 结果: 超时/阻断 ✕", addr)
 	}
 }
 
@@ -147,9 +143,6 @@ func handleTCPing(w http.ResponseWriter, r *http.Request) {
 	}
 
 	target := net.JoinHostPort(addr, portStr)
-	if verbose {
-		log.Printf("[tcping] probing %s", target)
-	}
 
 	start := time.Now()
 	conn, err := net.DialTimeout("tcp", target, 6*time.Second)
@@ -157,9 +150,7 @@ func handleTCPing(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		writeJSON(w, 200, Result{Code: -2, Msg: "失败", Data: []struct{}{}})
-		if verbose {
-			log.Printf("[tcping] %s → FAIL  %v", target, err)
-		}
+		log.Printf("⚠️ [TCPing] 目标: %-21s | 结果: 失败 ✕ (%v)", target, err)
 		return
 	}
 	conn.Close()
@@ -172,9 +163,7 @@ func handleTCPing(w http.ResponseWriter, r *http.Request) {
 			Latency: fmt.Sprintf("%dms", latencyMs),
 		},
 	})
-	if verbose {
-		log.Printf("[tcping] %s → OK  %dms", target, latencyMs)
-	}
+	log.Printf("📡 [TCPing] 目标: %-21s | 结果: 畅通 ✓ | 延迟: %dms", target, latencyMs)
 }
 
 // ─── 入口 ────────────────────────────────────────────────────────────────────
