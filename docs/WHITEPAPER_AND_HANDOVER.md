@@ -117,10 +117,10 @@ flowchart TD
    - TCPing 是向特定端口发起 TCP 三次握手，探测未开放的端口会遭到小鸡内核拒连（RST），从而被误判为被墙；
 3. **彻底根治方案**：使用 **Aegis-Ping 纯 ICMP 模式**，直接向小鸡 IP 发起系统 Ping，**完全不需要小鸡开放任何端口**，彻底杜绝误报。
 
-### 4.3 脚本管道执行与国内镜像避坑
-1. **管道 `curl | bash` 读空退出**：管道流导致 stdin 读到 EOF，旧脚本 `read` 命令返回 1，触发顶部 `set -e` 导致直接退出；已修复为非交互模式默认自动取值，终端模式重定向从 `/dev/tty` 读取；
-2. **国内下载 GitHub 假死**：`mirror.ghproxy.com` 已停运；现全面采用 `ghfast.top` 与 `ghproxy.net` 极速双镜像轮询并附带进度条；
-3. **URL 格式规范**：浏览器访问端口时切勿在域名后加多余的斜杠（`http://域名:38921/health` 而非 `http://域名/:38921/health`）。
+### 4.4 版本号联动维护与发版铁律
+1. **单一版本源头**：全局版本号以 `internal/common/types.go` 的 `const Version = "vX.Y.Z"` 为唯一准则；
+2. **严禁写死 Tag**：`cmd/publisher/main.go` 动态导入 `common.Version`，发版时自动打出对应 GitHub Release Tag，彻底杜绝代码迭代 N 个版本 Release 仍是 `v1.0.0` 的事故；
+3. **前端差异化感知**：管理后台自动根据主控与小鸡版本比对，最新版渲染绿色 `${ver} ✓`，旧版渲染橙黄色 `v1.0.0 待更新`。
 
 ---
 

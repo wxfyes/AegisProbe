@@ -277,6 +277,20 @@
         ipHtml = `<span style="color: var(--text-muted); font-size: 12px;">${n.is_online ? '检测中...' : '--'}</span>`;
       }
 
+      // 探针版本渲染引擎 (动态感知主控最新版本，若小鸡落后则醒目提示待更新)
+      let verHtml = '';
+      const masterVer = (currentConfig && currentConfig.master_version) ? currentConfig.master_version : 'v1.2.0';
+      if (!n.is_online) {
+        verHtml = `<span style="color: var(--text-muted); font-size: 12px; font-family: var(--font-mono);">--</span>`;
+      } else {
+        const agentVer = n.version || 'v1.0.0';
+        if (agentVer === masterVer) {
+          verHtml = `<span class="capsule" style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; background: rgba(16, 185, 129, 0.12); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3);" title="当前 Agent 为最新版本">${escapeHtml(agentVer)} ✓</span>`;
+        } else {
+          verHtml = `<span class="capsule" style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; background: rgba(245, 158, 11, 0.12); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3);" title="当前 Agent 版本落后于主控 (${masterVer})，请在小鸡执行一键更新">${escapeHtml(agentVer)} 待更新</span>`;
+        }
+      }
+
       return `
         <tr draggable="true" data-id="${escapeHtml(n.id)}">
           <td style="text-align: center; width: 44px;">
@@ -290,11 +304,7 @@
             </div>
           </td>
           <td>${ipHtml}</td>
-          <td>
-            <span class="capsule" style="font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; background: rgba(56, 189, 248, 0.1); color: #0284c7; border: 1px solid rgba(56, 189, 248, 0.25);">
-              ${escapeHtml(n.version || (n.is_online ? 'v1.0.0' : '--'))}
-            </span>
-          </td>
+          <td>${verHtml}</td>
           <td>
             <span class="node-os-badge">${escapeHtml(n.real_os || n.os || 'Linux')}</span>
           </td>

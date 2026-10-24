@@ -11,12 +11,14 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"tianque_probe/internal/common"
 )
 
-const (
+var (
 	repoOwner = "wxfyes"
 	repoName  = "AegisProbe"
-	tag       = "v1.0.0"
+	tag       = common.Version // 严禁硬编码！统一从 common.Version 动态获取当前最新版本
 )
 
 type Release struct {
@@ -168,7 +170,7 @@ func getOrCreateRelease(client *http.Client, token, notes string) (*Release, err
 	bodyMap := map[string]interface{}{
 		"tag_name":         tag,
 		"target_commitish": "main",
-		"name":             fmt.Sprintf("🛡️ 天阙·神盾安全探针 %s 正式首发版", tag),
+		"name":             fmt.Sprintf("🛡️ 天阙·神盾安全探针 %s 正式版", tag),
 		"body":             notes,
 		"draft":            false,
 		"prerelease":       false,
