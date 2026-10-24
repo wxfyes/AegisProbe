@@ -1,14 +1,14 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # ==============================================================================
 # 🛡️ Aegis-Ping — 天阙·神盾家宽测活微探针 一键安装/管理脚本
 # 适用系统: Linux (x86_64 / arm64 / armv7 / 386)、OpenWrt、iStoreOS、Alpine
+# 兼容 sh / bash / busybox ash
 # ==============================================================================
-
-set -e
 
 REPO="wxfyes/AegisProbe"
 INSTALL_DIR="/opt/aegis-ping"
 BIN_NAME="aegis_ping"
+DEFAULT_PORT="38921"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -17,18 +17,18 @@ CYAN='\033[0;36m'
 PLAIN='\033[0m'
 
 check_root() {
-    if [ "$(id -u)" != "0" ]; then
-        echo -e "${RED}❌ 此脚本需要 root 权限！${PLAIN}"
+    if [ "$(id -u 2>/dev/null || echo 1)" != "0" ]; then
+        echo -e "${RED}❌ 此脚本需要 root 权限！请使用 sudo 或切换至 root 用户运行。${PLAIN}"
         exit 1
     fi
 }
 
 detect_arch() {
-    ARCH=$(uname -m)
+    ARCH=$(uname -m 2>/dev/null || echo "x86_64")
     case "$ARCH" in
         x86_64|amd64)  GOARCH="amd64" ;;
         aarch64|arm64) GOARCH="arm64" ;;
-        armv7*|armhf)  GOARCH="arm" ;;
+        armv7*|armhf)  GOARCH="armv7" ;;
         i386|i686)     GOARCH="386" ;;
         *)
             echo -e "${RED}❌ 暂不支持的架构: $ARCH${PLAIN}"
@@ -49,24 +49,62 @@ detect_init() {
     fi
 }
 
+# 自动放行 OpenWrt / iStoreOS 防火墙端口
+configure_firewall() {
+    local port="$1"
+    if [ "$INIT" = "openwrt" ] && command -v uci >/dev/null 2>&1; then
+        if ! uci show firewall 2>/dev/null | grep -q "Allow-Aegis-Ping"; then
+            echo -e "${YELLOW}🛡️ 正在自动配置 iStoreOS/OpenWrt 防火墙放行 TCP ${port} 端口...${PLAIN}"
+            uci add firewall rule >/dev/null 2>&1 || true
+            uci set firewall.@rule[-1].name='Allow-Aegis-Ping'
+            uci set firewall.@rule[-1].src='wan'
+            uci set firewall.@rule[-1].proto='tcp'
+            uci set firewall.@rule[-1].dest_port="${port}"
+            uci set firewall.@rule[-1].target='ACCEPT'
+            uci commit firewall >/dev/null 2>&1 || true
+            /etc/init.d/firewall reload >/dev/null 2>&1 || true
+            echo -e "${GREEN}✅ 已自动在防火墙中放行 WAN 侧入站 TCP ${port} 端口！${PLAIN}"
+        fi
+    fi
+}
+
 install_aegis_ping() {
     check_root
     detect_arch
     detect_init
 
-    # ── 交互式配置 ──
     echo -e "${CYAN}=================================================================${PLAIN}"
     echo -e "${CYAN}🛡️  Aegis-Ping 天阙·神盾家宽测活微探针 安装向导${PLAIN}"
     echo -e "${CYAN}=================================================================${PLAIN}"
 
-    DEFAULT_PORT="38921"
-    read -rp "监听端口 [默认 ${DEFAULT_PORT}]: " PORT
-    PORT="${PORT:-$DEFAULT_PORT}"
+    # 1. 端口优先从命令行参数读取；若未传且是交互终端则提示输入，否则使用默认端口
+    if [ -z "$PORT" ]; then
+        if [ -c /dev/tty ] && [ -t 0 ]; then
+            printf "监听端口 [回车默认 %s]: " "$DEFAULT_PORT"
+            read -r input_port < /dev/tty 2>/dev/null || input_port=""
+            PORT="${input_port:-$DEFAULT_PORT}"
+        else
+            PORT="$DEFAULT_PORT"
+        fi
+    fi
 
-    read -rp "访问 Token（留空则无鉴权，建议设置强密码）: " TOKEN
+    # 2. Token 读取逻辑
+    if [ -z "$TOKEN" ]; then
+        if [ -c /dev/tty ] && [ -t 0 ]; then
+            printf "访问 Token (可选，留空则免密，建议设置密钥): "
+            read -r input_token < /dev/tty 2>/dev/null || input_token=""
+            TOKEN="$input_token"
+        else
+            TOKEN=""
+        fi
+    fi
 
-    echo ""
-    echo -e "${YELLOW}📡 架构: ${GOARCH} | 系统管理器: ${INIT} | 端口: ${PORT}${PLAIN}"
+    echo -e "${YELLOW}📡 硬件架构: ${GOARCH} | 服务管理器: ${INIT} | 监听端口: ${PORT}${PLAIN}"
+    if [ -n "$TOKEN" ]; then
+        echo -e "${YELLOW}🔑 访问密钥: ${TOKEN}${PLAIN}"
+    else
+        echo -e "${YELLOW}🔑 访问密钥: 无 (开放模式)${PLAIN}"
+    fi
     echo ""
 
     # ── 下载二进制 ──
@@ -76,9 +114,26 @@ install_aegis_ping() {
     TMP_BIN="/tmp/aegis_ping_${GOARCH}"
 
     echo -e "${CYAN}⬇️  正在下载 Aegis-Ping (${GOARCH})...${PLAIN}"
-    if ! curl -fsSL --connect-timeout 8 "$BIN_URL" -o "$TMP_BIN" 2>/dev/null; then
-        echo -e "${YELLOW}⚠️  直连下载慢，切换国内加速镜像...${PLAIN}"
-        curl -fsSL --connect-timeout 15 "$BIN_PROXY" -o "$TMP_BIN"
+    download_ok=0
+    if command -v curl >/dev/null 2>&1; then
+        if curl -fsSL --connect-timeout 8 "$BIN_URL" -o "$TMP_BIN" 2>/dev/null; then
+            download_ok=1
+        elif curl -fsSL --connect-timeout 15 "$BIN_PROXY" -o "$TMP_BIN" 2>/dev/null; then
+            download_ok=1
+        fi
+    fi
+
+    if [ "$download_ok" -eq 0 ] && command -v wget >/dev/null 2>&1; then
+        if wget --timeout=8 -qO "$TMP_BIN" "$BIN_URL" 2>/dev/null; then
+            download_ok=1
+        elif wget --timeout=15 -qO "$TMP_BIN" "$BIN_PROXY" 2>/dev/null; then
+            download_ok=1
+        fi
+    fi
+
+    if [ "$download_ok" -eq 0 ] || [ ! -s "$TMP_BIN" ]; then
+        echo -e "${RED}❌ 下载失败，请检查网络是否能访问 GitHub 或代理节点！${PLAIN}"
+        exit 1
     fi
 
     chmod +x "$TMP_BIN"
@@ -90,7 +145,7 @@ AEGIS_PING_ADDR=:${PORT}
 AEGIS_PING_TOKEN=${TOKEN}
 EOF
 
-    # ── 注册系统服务 ──
+    # ── 注册系统服务并启动 ──
     if [ "$INIT" = "systemd" ]; then
         cat > /etc/systemd/system/aegis-ping.service << SEOF
 [Unit]
@@ -108,7 +163,7 @@ User=root
 WantedBy=multi-user.target
 SEOF
         systemctl daemon-reload
-        systemctl enable aegis-ping
+        systemctl enable aegis-ping >/dev/null 2>&1 || true
         systemctl restart aegis-ping
 
     elif [ "$INIT" = "openrc" ]; then
@@ -123,7 +178,7 @@ pidfile="/run/aegis-ping.pid"
 depend() { need net; }
 SEOF
         chmod +x /etc/init.d/aegis-ping
-        rc-update add aegis-ping default
+        rc-update add aegis-ping default >/dev/null 2>&1 || true
         rc-service aegis-ping restart
 
     elif [ "$INIT" = "openwrt" ]; then
@@ -142,37 +197,53 @@ start_service() {
 }
 SEOF
         chmod +x /etc/init.d/aegis-ping
-        /etc/init.d/aegis-ping enable
+        /etc/init.d/aegis-ping enable >/dev/null 2>&1 || true
         /etc/init.d/aegis-ping restart
 
     else
+        killall aegis_ping 2>/dev/null || true
         nohup "${INSTALL_DIR}/${BIN_NAME}" -addr=":${PORT}" -token="${TOKEN}" >/dev/null 2>&1 &
         echo "$!" > /var/run/aegis-ping.pid
     fi
 
+    # 自动放行防火墙
+    configure_firewall "${PORT}"
+
+    # 验证运行状态
+    sleep 1
+    is_running=0
+    if ps 2>/dev/null | grep -v grep | grep -q aegis_ping; then
+        is_running=1
+    elif pgrep aegis_ping >/dev/null 2>&1; then
+        is_running=1
+    fi
+
     echo ""
     echo -e "${GREEN}=================================================================${PLAIN}"
-    echo -e "${GREEN}✅ Aegis-Ping 已成功安装并启动！${PLAIN}"
-    echo ""
-    echo -e "${CYAN}📡 接口测试（直接点击或在软路由局域网内验证）：${PLAIN}"
-    LOCAL_IP=$(ip route get 1 2>/dev/null | awk '{print $NF; exit}' || echo "你的公网IP")
-    if [ -n "$TOKEN" ]; then
-        echo -e "  ${GREEN}健康检查  :${PLAIN} http://${LOCAL_IP}:${PORT}/health"
-        echo -e "  ${GREEN}ICMP Ping :${PLAIN} http://${LOCAL_IP}:${PORT}/ping?address=1.1.1.1&token=${TOKEN}"
-        echo -e "  ${GREEN}TCPing    :${PLAIN} http://${LOCAL_IP}:${PORT}/tcping?address=1.1.1.1&port=80&token=${TOKEN}"
-        echo ""
-        echo -e "${YELLOW}💡 在 AegisProbe 主控后台填入的 API 模板：${PLAIN}"
-        echo -e "   http://[你家公网IP]:${PORT}/ping?address={ip}&token=${TOKEN}"
+    if [ "$is_running" -eq 1 ]; then
+        echo -e "${GREEN}✅ Aegis-Ping 家宽微探针已成功安装并运行！${PLAIN}"
     else
-        echo -e "  ${GREEN}健康检查  :${PLAIN} http://${LOCAL_IP}:${PORT}/health"
-        echo -e "  ${GREEN}ICMP Ping :${PLAIN} http://${LOCAL_IP}:${PORT}/ping?address=1.1.1.1"
-        echo -e "  ${GREEN}TCPing    :${PLAIN} http://${LOCAL_IP}:${PORT}/tcping?address=1.1.1.1&port=80"
+        echo -e "${YELLOW}⚠️  Aegis-Ping 已安装，正在后台拉起...${PLAIN}"
+    fi
+    echo ""
+    echo -e "${CYAN}📡 接口说明（支持纯 ICMP Ping 与 TCPing）：${PLAIN}"
+    if [ -n "$TOKEN" ]; then
+        echo -e "  • ${GREEN}健康检查${PLAIN} : http://[你的公网IP]:${PORT}/health"
+        echo -e "  • ${GREEN}ICMP Ping${PLAIN}: http://[你的公网IP]:${PORT}/ping?address=1.1.1.1&token=${TOKEN}"
+        echo -e "  • ${GREEN}TCPing   ${PLAIN}: http://[你的公网IP]:${PORT}/tcping?address=1.1.1.1&port=80&token=${TOKEN}"
         echo ""
-        echo -e "${YELLOW}💡 在 AegisProbe 主控后台填入的 API 模板：${PLAIN}"
-        echo -e "   http://[你家公网IP]:${PORT}/ping?address={ip}"
+        echo -e "${YELLOW}👉 请复制此模板填入 AegisProbe 管理后台【系统设置】->【外部测活 API URL 模板】：${PLAIN}"
+        echo -e "   ${CYAN}http://[你的公网IP或DDNS]:${PORT}/ping?address={ip}&token=${TOKEN}${PLAIN}"
+    else
+        echo -e "  • ${GREEN}健康检查${PLAIN} : http://[你的公网IP]:${PORT}/health"
+        echo -e "  • ${GREEN}ICMP Ping${PLAIN}: http://[你的公网IP]:${PORT}/ping?address=1.1.1.1"
+        echo -e "  • ${GREEN}TCPing   ${PLAIN}: http://[你的公网IP]:${PORT}/tcping?address=1.1.1.1&port=80"
+        echo ""
+        echo -e "${YELLOW}👉 请复制此模板填入 AegisProbe 管理后台【系统设置】->【外部测活 API URL 模板】：${PLAIN}"
+        echo -e "   ${CYAN}http://[你的公网IP或DDNS]:${PORT}/ping?address={ip}${PLAIN}"
     fi
     echo -e "${GREEN}=================================================================${PLAIN}"
-    echo -e "${YELLOW}⚠️  请在软路由防火墙放行 TCP ${PORT} 端口！${PLAIN}"
+    echo -e "${PLAIN}提示: 该接口为纯 ICMP Ping，不需要服务器开放任何 80/22 端口，只要小鸡在线即可精准测活！${PLAIN}"
 }
 
 uninstall_aegis_ping() {
@@ -183,7 +254,7 @@ uninstall_aegis_ping() {
         systemctl stop aegis-ping 2>/dev/null || true
         systemctl disable aegis-ping 2>/dev/null || true
         rm -f /etc/systemd/system/aegis-ping.service
-        systemctl daemon-reload
+        systemctl daemon-reload 2>/dev/null || true
     elif [ "$INIT" = "openrc" ]; then
         rc-service aegis-ping stop 2>/dev/null || true
         rc-update del aegis-ping 2>/dev/null || true
@@ -192,6 +263,8 @@ uninstall_aegis_ping() {
         /etc/init.d/aegis-ping stop 2>/dev/null || true
         /etc/init.d/aegis-ping disable 2>/dev/null || true
         rm -f /etc/init.d/aegis-ping
+    else
+        killall aegis_ping 2>/dev/null || true
     fi
 
     rm -rf "$INSTALL_DIR"
@@ -202,7 +275,7 @@ show_status() {
     detect_init
     echo -e "${CYAN}============ Aegis-Ping 服务状态 ============${PLAIN}"
     if [ "$INIT" = "systemd" ]; then
-        systemctl status aegis-ping --no-pager || true
+        systemctl status aegis-ping --no-pager 2>/dev/null || true
     elif [ "$INIT" = "openrc" ]; then
         rc-service aegis-ping status 2>/dev/null || ps | grep aegis_ping | grep -v grep || true
     else
@@ -216,21 +289,60 @@ show_status() {
     echo -e "${CYAN}=============================================${PLAIN}"
 }
 
-# ── 主入口 ────────────────────────────────────────────────────────────────────
-case "${1:-}" in
-    --install)   install_aegis_ping ;;
-    --uninstall) uninstall_aegis_ping ;;
-    --status)    show_status ;;
-    --restart)
-        check_root; detect_init
+# ── 参数解析 ──
+ACTION="install"
+PORT=""
+TOKEN=""
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --install)
+            ACTION="install"
+            shift
+            ;;
+        --uninstall)
+            ACTION="uninstall"
+            shift
+            ;;
+        --status)
+            ACTION="status"
+            shift
+            ;;
+        --restart)
+            ACTION="restart"
+            shift
+            ;;
+        --port=*)
+            PORT="${1#*=}"
+            shift
+            ;;
+        --token=*)
+            TOKEN="${1#*=}"
+            shift
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+case "$ACTION" in
+    install)
+        install_aegis_ping
+        ;;
+    uninstall)
+        uninstall_aegis_ping
+        ;;
+    status)
+        show_status
+        ;;
+    restart)
+        check_root
+        detect_init
         if [ "$INIT" = "systemd" ]; then systemctl restart aegis-ping
         elif [ "$INIT" = "openrc" ]; then rc-service aegis-ping restart
         elif [ "$INIT" = "openwrt" ]; then /etc/init.d/aegis-ping restart
         fi
         echo -e "${GREEN}✅ Aegis-Ping 已重启！${PLAIN}"
-        ;;
-    *)
-        echo "用法: bash install_aegis_ping.sh [--install|--uninstall|--status|--restart]"
-        install_aegis_ping
         ;;
 esac

@@ -20,7 +20,6 @@ if (Test-Path $distDir) {
 }
 New-Item -ItemType Directory -Path "$distDir/downloads" -Force | Out-Null
 New-Item -ItemType Directory -Path "$distDir/aegis-ping" -Force | Out-Null
-
 $env:CGO_ENABLED = "0"
 
 # 1. Server Build
