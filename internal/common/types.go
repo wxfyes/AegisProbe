@@ -2,9 +2,13 @@ package common
 
 import "strings"
 
+// Version 定义天阙·神盾安全探针全局统一版本号
+const Version = "v1.2.0"
+
 // MetricsData 定义受控端 Agent 采集到的原始指标
 type MetricsData struct {
-	CPUPercent    float64 `json:"cpu_percent"`    // CPU 使用率 0-100
+	Version       string  `json:"version,omitempty"`      // 探针受控端版本号 (如 v1.2.0)
+	CPUPercent    float64 `json:"cpu_percent"`            // CPU 使用率 0-100
 	MemoryUsed    uint64  `json:"memory_used"`    // 内存使用量 (bytes)
 	MemoryTotal   uint64  `json:"memory_total"`   // 内存总量 (bytes)
 	SwapUsed      uint64  `json:"swap_used"`      // SWAP 使用量 (bytes)

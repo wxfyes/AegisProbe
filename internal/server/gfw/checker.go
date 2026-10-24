@@ -73,7 +73,7 @@ func (c *Checker) checkAll() {
 	}
 
 	for _, node := range cfg.Nodes {
-		ipv4, ipv6, _, isOnline := c.store.GetNodeRealInfo(node.ID)
+		ipv4, ipv6, _, _, isOnline := c.store.GetNodeRealInfo(node.ID)
 		if !isOnline {
 			continue
 		}

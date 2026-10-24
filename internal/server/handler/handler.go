@@ -257,12 +257,13 @@ func (h *RouterHandler) handleAdminConfig(w http.ResponseWriter, r *http.Request
 			IPv4     string `json:"ipv4"`
 			IPv6     string `json:"ipv6"`
 			RealOS   string `json:"real_os"`
+			Version  string `json:"version"`
 			IsOnline bool   `json:"is_online"`
 		}
 
 		adminNodes := make([]AdminNodeView, 0, len(cfg.Nodes))
 		for _, n := range cfg.Nodes {
-			ipv4, ipv6, osName, isOnline := h.store.GetNodeRealInfo(n.ID)
+			ipv4, ipv6, osName, ver, isOnline := h.store.GetNodeRealInfo(n.ID)
 			realIP := ipv4
 			if realIP == "" {
 				realIP = ipv6
@@ -273,11 +274,13 @@ func (h *RouterHandler) handleAdminConfig(w http.ResponseWriter, r *http.Request
 				IPv4:       ipv4,
 				IPv6:       ipv6,
 				RealOS:     osName,
+				Version:    ver,
 				IsOnline:   isOnline,
 			})
 		}
 
 		resp := map[string]interface{}{
+			"master_version":     common.Version,
 			"site_title":         cfg.SiteTitle,
 			"access_mode":        cfg.AccessMode,
 			"listen_port":        cfg.ListenPort,
@@ -557,18 +560,18 @@ sleep 1
 
 echo "📥 正在精准下载 ${BIN_NAME} (系统: ${INIT_SYS} | 架构: ${ARCH})..."
 GH_URL="https://github.com/${REPO}/releases/latest/download/${BIN_NAME}"
-MIRROR_URL="https://mirror.ghproxy.com/${GH_URL}"
+MIRROR1="https://ghfast.top/${GH_URL}"
+MIRROR2="https://ghproxy.net/${GH_URL}"
 
 if curl -fL --connect-timeout 6 -m 30 "$GH_URL" -o "${AGENT_DIR}/aegis_agent" 2>/dev/null; then
   echo "✓ 从 GitHub 直连下载成功"
+elif curl -fL --connect-timeout 8 -m 60 "$MIRROR1" -o "${AGENT_DIR}/aegis_agent" 2>/dev/null; then
+  echo "✓ 从极速镜像 1 (ghfast.top) 下载成功"
+elif curl -fL --connect-timeout 10 -m 60 "$MIRROR2" -o "${AGENT_DIR}/aegis_agent" 2>/dev/null; then
+  echo "✓ 从备用镜像 2 (ghproxy.net) 下载成功"
 else
-  echo "⚠️ 直连超时，切换镜像加速节点重试..."
-  if curl -fL --connect-timeout 10 -m 60 "$MIRROR_URL" -o "${AGENT_DIR}/aegis_agent" 2>/dev/null; then
-    echo "✓ 从加速通道下载成功"
-  else
-    echo "❌ 下载失败！请检查网络或 GitHub Release 是否存在。"
-    exit 1
-  fi
+  echo "❌ 下载失败！请检查网络或 GitHub Release 是否存在。"
+  exit 1
 fi
 chmod +x "${AGENT_DIR}/aegis_agent"
 

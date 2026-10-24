@@ -19,6 +19,7 @@ func newPlatformCollector() SystemCollector {
 
 func (c *OtherCollector) Collect() (*common.MetricsData, error) {
 	return &common.MetricsData{
+		Version:       common.Version,
 		CPUPercent:    1.0,
 		MemoryUsed:    1024 * 1024 * 512,
 		MemoryTotal:   1024 * 1024 * 2048,

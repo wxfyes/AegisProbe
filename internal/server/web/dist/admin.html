@@ -319,6 +319,7 @@
       <div class="sidebar-brand">
         <span class="logo">🛡️</span>
         <span class="title">神盾控制台</span>
+        <span id="sidebarMasterVersion" style="font-size: 11px; margin-left: auto; font-family: var(--font-mono); color: #10b981; background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.25); padding: 2px 7px; border-radius: 10px; font-weight: 700;">v1.2.0</span>
       </div>
 
       <nav class="sidebar-nav">
@@ -350,7 +351,10 @@
       <!-- 页面 1：服务器列表 (节点管理) -->
       <section id="tab-servers" class="tab-pane active">
         <div class="page-header">
-          <div class="page-title">受控服务器列表</div>
+          <div class="page-title" style="display: flex; align-items: center; gap: 10px;">
+            <span>受控服务器列表</span>
+            <span id="headerMasterVersion" style="font-family: var(--font-mono); font-size: 11px; padding: 2px 8px; border-radius: 12px; background: rgba(16, 185, 129, 0.12); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.25); font-weight: 700;">Master v1.2.0</span>
+          </div>
           <div class="header-actions">
             <input type="text" id="nodeSearchInput" class="search-input" placeholder="🔍 搜索服务器名称/IP...">
             <button id="btnAddNode" class="btn-primary" style="width: auto; padding: 7px 18px; font-size: 13px;">+ 添加节点</button>
@@ -366,6 +370,7 @@
                   <th style="width: 120px;">ID</th>
                   <th>名称 (国旗内置自动识别)</th>
                   <th>IP 地址</th>
+                  <th>探针版本</th>
                   <th>系统架构</th>
                   <th>分组</th>
                   <th>计费账单</th>

@@ -215,6 +215,14 @@
       }
     }
     updateGFWBadge(gfwURL, intervalSec);
+
+    if (cfg.master_version) {
+      const vText = cfg.master_version;
+      const sbEl = document.getElementById('sidebarMasterVersion');
+      if (sbEl) sbEl.textContent = vText;
+      const hdEl = document.getElementById('headerMasterVersion');
+      if (hdEl) hdEl.textContent = `Master ${vText}`;
+    }
   }
 
   let draggedRow = null;
@@ -230,7 +238,7 @@
     });
 
     if (filtered.length === 0) {
-      dom.nodeTableBody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 30px;">暂无匹配的服务器节点</td></tr>`;
+      dom.nodeTableBody.innerHTML = `<tr><td colspan="10" style="text-align: center; color: var(--text-muted); padding: 30px;">暂无匹配的服务器节点</td></tr>`;
       return;
     }
 
@@ -282,6 +290,11 @@
             </div>
           </td>
           <td>${ipHtml}</td>
+          <td>
+            <span class="capsule" style="font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; background: rgba(56, 189, 248, 0.1); color: #0284c7; border: 1px solid rgba(56, 189, 248, 0.25);">
+              ${escapeHtml(n.version || (n.is_online ? 'v1.0.0' : '--'))}
+            </span>
+          </td>
           <td>
             <span class="node-os-badge">${escapeHtml(n.real_os || n.os || 'Linux')}</span>
           </td>

@@ -105,16 +105,20 @@ func (s *Store) UpdateGFWStatus(nodeID string, status string) {
 	}
 }
 
-// GetNodeRealInfo 获取节点的双栈 IP (IPv4, IPv6)、真实操作系统以及在线状态
-func (s *Store) GetNodeRealInfo(nodeID string) (ipv4 string, ipv6 string, os string, isOnline bool) {
+// GetNodeRealInfo 获取节点的双栈 IP (IPv4, IPv6)、真实操作系统、版本号以及在线状态
+func (s *Store) GetNodeRealInfo(nodeID string) (ipv4 string, ipv6 string, os string, version string, isOnline bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	st, exists := s.states[nodeID]
 	if !exists {
-		return "", "", "", false
+		return "", "", "", "", false
 	}
 	isOnline = time.Since(st.LastSeen) <= 60*time.Second
-	return st.IPv4, st.IPv6, st.LatestMetrics.OS, isOnline
+	ver := st.LatestMetrics.Version
+	if ver == "" && isOnline {
+		ver = "v1.0.0"
+	}
+	return st.IPv4, st.IPv6, st.LatestMetrics.OS, ver, isOnline
 }
 
 // CheckHeartbeats 定时扫描节点心跳状态，触发掉线或上线恢复

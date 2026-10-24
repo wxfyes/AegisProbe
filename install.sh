@@ -3,16 +3,15 @@
 # 🛡️ 天阙·神盾安全探针 (AegisProbe) 一键管理与安装脚本
 # GitHub: https://github.com/wxfyes/AegisProbe
 # 【全平台支持】：普通Linux (Debian/Ubuntu/CentOS)、软路由 (OpenWrt/iStoreOS/PVE/Alpine)
-# 【特性】：精准单架构下载、绝不下载多余二进制、端口冲突检测、nobody安全沙箱
+# 【特性】：主控/被控独立管理、无损平滑热更新、干净卸载、nobody安全沙箱、极速双镜像加速
 # ==============================================================================
-
-set -e
 
 REPO="wxfyes/AegisProbe"
 INSTALL_DIR="/opt/aegis-probe"
 SYSTEMD_DIR="/etc/systemd/system"
 OPENWRT_INIT_DIR="/etc/init.d"
 LISTEN_PORT=8989
+SCRIPT_VERSION="v1.2.0"
 
 # 颜色定义
 RED='\033[0;31m'
@@ -78,7 +77,7 @@ force_free_port() {
     fi
 
     if [ -n "$pid" ]; then
-        echo -e "${YELLOW}⚠️ 端口 ${port} 被 PID ${pid} 占用，正在强制击杀...${PLAIN}"
+        echo -e "${YELLOW}⚠️ 端口 ${port} 被 PID ${pid} 占用，正在强制释放...${PLAIN}"
         kill -9 $pid 2>/dev/null || true
         sleep 1
     fi
@@ -98,7 +97,7 @@ force_free_port() {
             still_pid=$(ss -tlnp "sport = :$port" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1 || true)
         fi
         if [ -z "$still_pid" ]; then
-            echo -e "${GREEN}✓ 端口 ${port} 已成功释放${PLAIN}"
+            echo -e "${GREEN}✓ 端口 ${port} 已就绪${PLAIN}"
             return 0
         fi
         sleep 1
@@ -109,26 +108,41 @@ force_free_port() {
     exit 1
 }
 
-# 智能高速下载函数 (带 GitHub 镜像加速 fallback)
+# 智能高速下载函数 (支持 GitHub 直连 + 国内双极速镜像源轮询 fallback)
 download_file() {
     local filename="$1"
     local output="$2"
     local url="https://github.com/${REPO}/releases/latest/download/${filename}"
-    local mirror_url="https://mirror.ghproxy.com/https://github.com/${REPO}/releases/latest/download/${filename}"
+    local mirror1="https://ghfast.top/${url}"
+    local mirror2="https://ghproxy.net/${url}"
 
-    echo -e "${CYAN}📥 正在精准下载 ${filename} (当前架构: ${GOARCH}) ...${PLAIN}"
+    echo -e "${CYAN}📥 正在下载 ${filename} (架构: ${GOARCH}) ...${PLAIN}"
+    
+    # 1. 尝试直连 (限时 8s)
     if curl -fL --connect-timeout 6 -m 30 "$url" -o "$output" 2>/dev/null; then
         echo -e "${GREEN}✓ 从 GitHub 直连下载成功${PLAIN}"
-    else
-        echo -e "${YELLOW}⚠️ 直连超时，自动切换加速节点重试...${PLAIN}"
-        if curl -fL --connect-timeout 10 -m 60 "$mirror_url" -o "$output" 2>/dev/null; then
-            echo -e "${GREEN}✓ 从加速通道下载成功${PLAIN}"
-        else
-            echo -e "${RED}❌ 下载失败，请检查网络或 GitHub Release 状态！${PLAIN}"
-            exit 1
-        fi
+        chmod +x "$output"
+        return 0
     fi
-    chmod +x "$output"
+
+    # 2. 尝试极速镜像 1 (ghfast.top)
+    echo -e "${YELLOW}⚠️ 直连较慢，切换国内极速镜像源 1 (ghfast.top)...${PLAIN}"
+    if curl -fL --connect-timeout 8 -m 60 "$mirror1" -o "$output" 2>/dev/null; then
+        echo -e "${GREEN}✓ 从极速镜像 1 下载成功${PLAIN}"
+        chmod +x "$output"
+        return 0
+    fi
+
+    # 3. 尝试极速镜像 2 (ghproxy.net)
+    echo -e "${YELLOW}⚠️ 切换国内备用镜像源 2 (ghproxy.net)...${PLAIN}"
+    if curl -fL --connect-timeout 10 -m 60 "$mirror2" -o "$output" 2>/dev/null; then
+        echo -e "${GREEN}✓ 从极速镜像 2 下载成功${PLAIN}"
+        chmod +x "$output"
+        return 0
+    fi
+
+    echo -e "${RED}❌ 下载失败，请检查网络或 GitHub Release 状态！${PLAIN}"
+    exit 1
 }
 
 # 获取本机公网 IP (用于提示)
@@ -138,7 +152,9 @@ get_public_ip() {
     echo "$ip"
 }
 
-# ==================== 1. 安装探针服务端 (Master) ====================
+# ==================== 1. 主控服务端管理 (Master) ====================
+
+# 1.1 安装服务端
 install_master() {
     check_root
     detect_arch
@@ -157,12 +173,12 @@ install_master() {
     echo -e "${BLUE}运行环境: ${INIT_SYS} | 机器架构: ${GOARCH} | 监听端口: ${LISTEN_PORT}${PLAIN}"
     echo -e "${BLUE}=================================================================${PLAIN}"
 
-    # 第一步：停止 + mask 封死所有旧服务（防止 Restart=always 在下载期间自动重启抢占端口）
+    # 停止旧服务
     if [ "$INIT_SYS" = "systemd" ]; then
         systemctl stop aegis-server    2>/dev/null || true
         systemctl stop tianque-probe   2>/dev/null || true
-        systemctl mask tianque-probe   2>/dev/null || true   # 彻底封死旧服务自动重启
-        systemctl mask aegis-server    2>/dev/null || true   # 临时封死，写完新 unit 再 unmask
+        systemctl mask tianque-probe   2>/dev/null || true
+        systemctl mask aegis-server    2>/dev/null || true
     elif [ "$INIT_SYS" = "openrc" ]; then
         rc-service aegis-server stop 2>/dev/null || true
         rc-service tianque-probe stop 2>/dev/null || true
@@ -170,18 +186,15 @@ install_master() {
         ${OPENWRT_INIT_DIR}/aegis-server stop 2>/dev/null || true
     fi
 
-    # 第二步：按进程名强杀残留（双保险）
     pkill -9 -x aegis_server 2>/dev/null || true
     killall -9 aegis_server  2>/dev/null || true
     sleep 1
 
-    # 第三步：按端口精准击杀 + 验证端口已释放（失败则退出）
     force_free_port "$LISTEN_PORT"
 
-    # 下载新二进制（此时旧服务已被 mask，不会在下载期间自动重启）
+    # 下载新二进制
     download_file "$bin_name" "${srv_dir}/aegis_server"
 
-    # 下载完成后再次确认端口仍然空闲（防止任何意外进程趁隙占用）
     force_free_port "$LISTEN_PORT"
 
     # 根据系统类型配置自启服务
@@ -202,7 +215,6 @@ LimitNOFILE=65535
 [Install]
 WantedBy=multi-user.target
 EOF
-        # unmask 解封（之前 mask 是为了防止下载期间自动重启）
         systemctl unmask aegis-server 2>/dev/null || true
         systemctl daemon-reload
         systemctl enable aegis-server
@@ -275,10 +287,125 @@ EOF
     echo -e "${CYAN}👉 管理控制台地址: ${PLAIN}http://${server_ip}:${LISTEN_PORT}/admin.html"
     echo -e "${YELLOW}👉 初始管理员密码: ${PLAIN}${admin_pwd}"
     echo -e "${PLAIN}=================================================================${PLAIN}"
-    echo -e "${PLAIN}提示: 请在防火墙/安全组开放 ${LISTEN_PORT} TCP 端口。进入后台可随时修改密码。${PLAIN}"
 }
 
-# ==================== 2. 安装受控端 (Agent) ====================
+# 1.2 一键热更新服务端 (保留所有配置)
+update_master() {
+    check_root
+    detect_arch
+    detect_init_sys
+
+    local srv_dir="${INSTALL_DIR}/server"
+    local srv_bin="${srv_dir}/aegis_server"
+
+    if [ ! -f "$srv_bin" ]; then
+        echo -e "${YELLOW}⚠️ 未检测到已安装的服务端，自动转入全新安装流程...${PLAIN}"
+        install_master
+        return 0
+    fi
+
+    echo -e "${BLUE}=================================================================${PLAIN}"
+    echo -e "${BLUE}🔄 正在热更新 天阙·神盾 探针服务端 (保留 data/config.json 配置)...${PLAIN}"
+    echo -e "${BLUE}=================================================================${PLAIN}"
+
+    # 临时下载新二进制
+    local tmp_bin="/tmp/aegis_server_update"
+    download_file "aegis_server_linux_amd64" "$tmp_bin"
+    chmod +x "$tmp_bin"
+
+    # 停止旧服务
+    if [ "$INIT_SYS" = "systemd" ]; then
+        systemctl stop aegis-server 2>/dev/null || true
+    elif [ "$INIT_SYS" = "openrc" ]; then
+        rc-service aegis-server stop 2>/dev/null || true
+    elif [ "$INIT_SYS" = "openwrt" ]; then
+        ${OPENWRT_INIT_DIR}/aegis-server stop 2>/dev/null || true
+    fi
+    pkill -9 -x aegis_server 2>/dev/null || true
+    sleep 1
+
+    # 替换主控二进制
+    mv -f "$tmp_bin" "$srv_bin"
+    chmod 755 "$srv_bin"
+
+    # 重启服务
+    if [ "$INIT_SYS" = "systemd" ]; then
+        systemctl restart aegis-server
+        sleep 2
+        if systemctl is-active --quiet aegis-server; then
+            echo -e "${GREEN}✅ 主控服务端已平滑热更新至最新版本！所有节点配置与密码完整保留。${PLAIN}"
+        else
+            echo -e "${RED}❌ 重启失败，请检查 journalctl -u aegis-server -n 20${PLAIN}"
+        fi
+    elif [ "$INIT_SYS" = "openrc" ]; then
+        rc-service aegis-server restart
+        echo -e "${GREEN}✅ 主控服务端已热更新并重启！${PLAIN}"
+    elif [ "$INIT_SYS" = "openwrt" ]; then
+        ${OPENWRT_INIT_DIR}/aegis-server restart
+        echo -e "${GREEN}✅ 主控服务端已热更新并重启！${PLAIN}"
+    fi
+}
+
+# 1.3 独立卸载服务端
+uninstall_master() {
+    check_root
+    detect_init_sys
+
+    local srv_dir="${INSTALL_DIR}/server"
+    if [ ! -d "$srv_dir" ] && [ ! -f "${SYSTEMD_DIR}/aegis-server.service" ]; then
+        echo -e "${YELLOW}⚠️ 未检测到已安装的主控服务端。${PLAIN}"
+        return 0
+    fi
+
+    echo -e "${YELLOW}=================================================================${PLAIN}"
+    echo -e "${YELLOW}⚠️ 准备卸载 天阙·神盾 探针服务端 (Master)${PLAIN}"
+    echo -e "${YELLOW}=================================================================${PLAIN}"
+    read -rp "确认卸载主控服务端吗？[y/N]: " confirm
+    if [[ ! "$confirm" =~ ^[yY]$ ]]; then
+        echo -e "${CYAN}已取消卸载。${PLAIN}"
+        return 0
+    fi
+
+    read -rp "是否同时删除节点数据与配置文件 (data/config.json)？[y/N] (默认保留配置): " purge_data
+
+    # 停止与清理自启服务
+    if [ "$INIT_SYS" = "systemd" ]; then
+        systemctl stop aegis-server 2>/dev/null || true
+        systemctl disable aegis-server 2>/dev/null || true
+        rm -f "${SYSTEMD_DIR}/aegis-server.service"
+        systemctl daemon-reload
+    elif [ "$INIT_SYS" = "openrc" ]; then
+        rc-service aegis-server stop 2>/dev/null || true
+        rc-update del aegis-server default 2>/dev/null || true
+        rm -f /etc/init.d/aegis-server
+    elif [ "$INIT_SYS" = "openwrt" ]; then
+        ${OPENWRT_INIT_DIR}/aegis-server stop 2>/dev/null || true
+        ${OPENWRT_INIT_DIR}/aegis-server disable 2>/dev/null || true
+        rm -f "${OPENWRT_INIT_DIR}/aegis-server"
+    fi
+
+    pkill -9 -x aegis_server 2>/dev/null || true
+    killall -9 aegis_server 2>/dev/null || true
+
+    if [[ "$purge_data" =~ ^[yY]$ ]]; then
+        rm -rf "$srv_dir"
+        echo -e "${GREEN}✓ 主控服务端二进制与数据配置已彻底删除。${PLAIN}"
+    else
+        rm -f "${srv_dir}/aegis_server"
+        echo -e "${GREEN}✓ 主控服务已卸载，配置数据已完整保留在: ${srv_dir}/data/${PLAIN}"
+    fi
+
+    # 若 Agent 也不存在，清理母目录
+    if [ ! -d "${INSTALL_DIR}/agent" ] && [ ! -d "${INSTALL_DIR}/server" ]; then
+        rm -rf "$INSTALL_DIR" 2>/dev/null || true
+    fi
+
+    echo -e "${GREEN}✅ 主控服务端已成功卸载！${PLAIN}"
+}
+
+# ==================== 2. 受控端管理 (Agent) ====================
+
+# 2.1 安装受控端
 install_agent() {
     check_root
     detect_arch
@@ -300,7 +427,6 @@ install_agent() {
         exit 1
     fi
 
-    # 仅下载当前机器匹配的单一架构 Agent，绝不多下一个文件
     local bin_name="aegis_agent_linux_${GOARCH}"
     local agent_dir="${INSTALL_DIR}/agent"
     mkdir -p "$agent_dir"
@@ -319,11 +445,11 @@ install_agent() {
         ${OPENWRT_INIT_DIR}/aegis-agent stop 2>/dev/null || true
     fi
 
-    # 下载当前架构的 agent
+    # 下载对应架构的 agent
     download_file "$bin_name" "${agent_dir}/aegis_agent"
     chmod +x "${agent_dir}/aegis_agent"
 
-    # 配置开机自启 (nobody 用户运行)
+    # 配置开机自启
     if [ "$INIT_SYS" = "systemd" ]; then
         cat <<EOF > "${SYSTEMD_DIR}/aegis-agent.service"
 [Unit]
@@ -402,28 +528,28 @@ EOF
     echo -e "${GREEN}=================================================================${PLAIN}"
 }
 
-# 快捷热更新受控端二进制 (保留原配置秒级生效)
+# 2.2 一键热更新受控端 (保留启动参数)
 update_agent_binary() {
     check_root
     detect_arch
     detect_init_sys
 
-    local agent_bin="${INSTALL_DIR}/agent/aegis_agent"
+    local agent_dir="${INSTALL_DIR}/agent"
+    local agent_bin="${agent_dir}/aegis_agent"
+
     if [ ! -f "$agent_bin" ]; then
         echo -e "${RED}❌ 未检测到已安装的 AegisProbe Agent！请直接使用后台一键命令安装。${PLAIN}"
         exit 1
     fi
 
-    echo -e "${CYAN}⬇️  正在下载最新版 AegisProbe Agent (${GOARCH})...${PLAIN}"
-    local download_url="https://github.com/${REPO}/releases/latest/download/aegis_agent_linux_${GOARCH}"
-    local proxy_url="https://mirror.ghproxy.com/${download_url}"
+    echo -e "${BLUE}=================================================================${PLAIN}"
+    echo -e "${BLUE}🔄 正在热更新 天阙·神盾 受控端 (Agent)...${PLAIN}"
+    echo -e "${BLUE}=================================================================${PLAIN}"
 
-    local tmp_bin="/tmp/aegis_agent_${GOARCH}"
-    if ! curl -fsSL --connect-timeout 8 "$download_url" -o "$tmp_bin" 2>/dev/null; then
-        echo -e "${YELLOW}⚠️ 直连下载较慢，正在切换国内极速镜像...${PLAIN}"
-        curl -fsSL --connect-timeout 15 "$proxy_url" -o "$tmp_bin"
-    fi
+    local bin_name="aegis_agent_linux_${GOARCH}"
+    local tmp_bin="/tmp/aegis_agent_update_${GOARCH}"
 
+    download_file "$bin_name" "$tmp_bin"
     chmod +x "$tmp_bin"
     mv -f "$tmp_bin" "$agent_bin"
     chmod 755 "$agent_bin"
@@ -431,71 +557,156 @@ update_agent_binary() {
     echo -e "${GREEN}🔄 正在热重启探针服务...${PLAIN}"
     if [ "$INIT_SYS" = "systemd" ]; then
         systemctl restart aegis-agent
+        sleep 2
+        if systemctl is-active --quiet aegis-agent; then
+            echo -e "${GREEN}✅ 受控端探针已成功热更新至最新版本！版本号与双栈数据已自动上报。${PLAIN}"
+        fi
     elif [ "$INIT_SYS" = "openrc" ]; then
         rc-service aegis-agent restart
+        echo -e "${GREEN}✅ 受控端探针已热更新并重启！${PLAIN}"
     elif [ "$INIT_SYS" = "openwrt" ]; then
-        /etc/init.d/aegis-agent restart
+        ${OPENWRT_INIT_DIR}/aegis-agent restart
+        echo -e "${GREEN}✅ 受控端探针已热更新并重启！${PLAIN}"
     fi
-    echo -e "${GREEN}✅ 受控端探针已成功热更新至最新版本！双栈 IP 已就绪。${PLAIN}"
 }
+
+# 2.3 独立卸载受控端
+uninstall_agent() {
+    check_root
+    detect_init_sys
+
+    local agent_dir="${INSTALL_DIR}/agent"
+    if [ ! -d "$agent_dir" ] && [ ! -f "${SYSTEMD_DIR}/aegis-agent.service" ]; then
+        echo -e "${YELLOW}⚠️ 未检测到已安装的受控端探针 (Agent)。${PLAIN}"
+        return 0
+    fi
+
+    echo -e "${YELLOW}=================================================================${PLAIN}"
+    echo -e "${YELLOW}⚠️ 准备卸载 天阙·神盾 受控端探针 (Agent)${PLAIN}"
+    echo -e "${YELLOW}=================================================================${PLAIN}"
+    read -rp "确认卸载受控端探针吗？[y/N]: " confirm
+    if [[ ! "$confirm" =~ ^[yY]$ ]]; then
+        echo -e "${CYAN}已取消卸载。${PLAIN}"
+        return 0
+    fi
+
+    # 停止服务并清理自启
+    if [ "$INIT_SYS" = "systemd" ]; then
+        systemctl stop aegis-agent 2>/dev/null || true
+        systemctl disable aegis-agent 2>/dev/null || true
+        rm -f "${SYSTEMD_DIR}/aegis-agent.service"
+        systemctl daemon-reload
+    elif [ "$INIT_SYS" = "openrc" ]; then
+        rc-service aegis-agent stop 2>/dev/null || true
+        rc-update del aegis-agent default 2>/dev/null || true
+        rm -f /etc/init.d/aegis-agent
+    elif [ "$INIT_SYS" = "openwrt" ]; then
+        ${OPENWRT_INIT_DIR}/aegis-agent stop 2>/dev/null || true
+        ${OPENWRT_INIT_DIR}/aegis-agent disable 2>/dev/null || true
+        rm -f "${OPENWRT_INIT_DIR}/aegis-agent"
+    fi
+
+    pkill -9 -x aegis_agent 2>/dev/null || true
+    killall -9 aegis_agent 2>/dev/null || true
+    rm -rf "$agent_dir"
+
+    # 若 Server 也不存在，清理母目录
+    if [ ! -d "${INSTALL_DIR}/server" ]; then
+        rm -rf "$INSTALL_DIR" 2>/dev/null || true
+    fi
+
+    echo -e "${GREEN}✅ 受控端探针已成功卸载并彻底清理！${PLAIN}"
+}
+
+# ==================== 3. 运维辅助与配置备份 ====================
 
 # 查看运行状态与密码
 view_server_status() {
     detect_init_sys
     local srv_dir="${INSTALL_DIR}/server"
     echo -e "${BLUE}==================== 服务运行状态 ====================${PLAIN}"
-    if [ "$INIT_SYS" = "systemd" ]; then
-        systemctl status aegis-server --no-pager || true
-    elif [ "$INIT_SYS" = "openrc" ]; then
-        rc-service aegis-server status 2>/dev/null || ps | grep aegis_server | grep -v grep || true
-    elif [ "$INIT_SYS" = "openwrt" ]; then
-        ps | grep aegis_server | grep -v grep || echo "服务未运行"
+    
+    # 服务端状态
+    if [ -f "${srv_dir}/aegis_server" ]; then
+        echo -e "${CYAN}【服务端 Master】:${PLAIN}"
+        if [ "$INIT_SYS" = "systemd" ]; then
+            systemctl status aegis-server --no-pager -l || true
+        else
+            ps | grep aegis_server | grep -v grep || echo "未在运行"
+        fi
+        if [ -f "${srv_dir}/data/config.json" ]; then
+            local pwd
+            pwd=$(grep -o '"admin_password": "[^"]*"' "${srv_dir}/data/config.json" | cut -d'"' -f4 || echo "")
+            echo -e "${YELLOW}🔑 当前管理员密码: ${pwd}${PLAIN}"
+        fi
+    else
+        echo -e "${PLAIN}服务端 Master: 未安装${PLAIN}"
     fi
-    if [ -f "${srv_dir}/data/config.json" ]; then
-        local pwd
-        pwd=$(grep -o '"admin_password": "[^"]*"' "${srv_dir}/data/config.json" | cut -d'"' -f4 || echo "")
-        echo -e "${YELLOW}当前管理员密码: ${pwd}${PLAIN}"
+
+    echo -e "------------------------------------------------------"
+
+    # 受控端状态
+    if [ -f "${INSTALL_DIR}/agent/aegis_agent" ]; then
+        echo -e "${CYAN}【受控端 Agent】:${PLAIN}"
+        if [ "$INIT_SYS" = "systemd" ]; then
+            systemctl status aegis-agent --no-pager -l || true
+        else
+            ps | grep aegis_agent | grep -v grep || echo "未在运行"
+        fi
+    else
+        echo -e "${PLAIN}受控端 Agent: 未安装${PLAIN}"
     fi
+
     echo -e "${BLUE}======================================================${PLAIN}"
 }
 
-# 卸载
-uninstall_all() {
-    check_root
+# 服务重启管理子菜单
+restart_services_menu() {
     detect_init_sys
-    echo -e "${YELLOW}确定要彻底卸载天阙·神盾探针吗？[y/N]: ${PLAIN}"
-    read -r confirm
-    if [[ "$confirm" =~ ^[yY]$ ]]; then
-        if [ "$INIT_SYS" = "systemd" ]; then
-            systemctl stop aegis-server 2>/dev/null || true
-            systemctl disable aegis-server 2>/dev/null || true
-            rm -f "${SYSTEMD_DIR}/aegis-server.service"
-
-            systemctl stop aegis-agent 2>/dev/null || true
-            systemctl disable aegis-agent 2>/dev/null || true
-            rm -f "${SYSTEMD_DIR}/aegis-agent.service"
-            systemctl daemon-reload
-        elif [ "$INIT_SYS" = "openrc" ]; then
-            rc-service aegis-server stop 2>/dev/null || true
-            rc-update del aegis-server default 2>/dev/null || true
-            rm -f /etc/init.d/aegis-server
-            rc-service aegis-agent stop 2>/dev/null || true
-            rc-update del aegis-agent default 2>/dev/null || true
-            rm -f /etc/init.d/aegis-agent
-        elif [ "$INIT_SYS" = "openwrt" ]; then
-            ${OPENWRT_INIT_DIR}/aegis-server stop 2>/dev/null || true
-            ${OPENWRT_INIT_DIR}/aegis-server disable 2>/dev/null || true
-            rm -f "${OPENWRT_INIT_DIR}/aegis-server"
-
-            ${OPENWRT_INIT_DIR}/aegis-agent stop 2>/dev/null || true
-            ${OPENWRT_INIT_DIR}/aegis-agent disable 2>/dev/null || true
-            rm -f "${OPENWRT_INIT_DIR}/aegis-agent"
-        fi
-        killall -9 aegis_server 2>/dev/null || true
-        killall -9 aegis_agent 2>/dev/null || true
-        rm -rf "$INSTALL_DIR"
-        echo -e "${GREEN}✅ 已彻底清理并卸载。${PLAIN}"
-    fi
+    echo -e "${CYAN}请选择要重启的服务:${PLAIN}"
+    echo -e " 1. 重启 主控服务端 (aegis-server)"
+    echo -e " 2. 重启 受控端 (aegis-agent)"
+    echo -e " 3. 重启 全部服务"
+    echo -e " 0. 返回上一级"
+    read -rp "请输入选项编号 [0-3]: " opt
+    case "$opt" in
+        1)
+            if [ "$INIT_SYS" = "systemd" ]; then
+                systemctl restart aegis-server
+            elif [ "$INIT_SYS" = "openrc" ]; then
+                rc-service aegis-server restart
+            elif [ "$INIT_SYS" = "openwrt" ]; then
+                ${OPENWRT_INIT_DIR}/aegis-server restart
+            fi
+            echo -e "${GREEN}✓ 主控服务端已重启${PLAIN}"
+            ;;
+        2)
+            if [ "$INIT_SYS" = "systemd" ]; then
+                systemctl restart aegis-agent
+            elif [ "$INIT_SYS" = "openrc" ]; then
+                rc-service aegis-agent restart
+            elif [ "$INIT_SYS" = "openwrt" ]; then
+                ${OPENWRT_INIT_DIR}/aegis-agent restart
+            fi
+            echo -e "${GREEN}✓ 受控端已重启${PLAIN}"
+            ;;
+        3)
+            if [ "$INIT_SYS" = "systemd" ]; then
+                systemctl restart aegis-server 2>/dev/null || true
+                systemctl restart aegis-agent 2>/dev/null || true
+            elif [ "$INIT_SYS" = "openrc" ]; then
+                rc-service aegis-server restart 2>/dev/null || true
+                rc-service aegis-agent restart 2>/dev/null || true
+            elif [ "$INIT_SYS" = "openwrt" ]; then
+                ${OPENWRT_INIT_DIR}/aegis-server restart 2>/dev/null || true
+                ${OPENWRT_INIT_DIR}/aegis-agent restart 2>/dev/null || true
+            fi
+            echo -e "${GREEN}✓ 全部探针服务已重启${PLAIN}"
+            ;;
+        *)
+            return 0
+            ;;
+    esac
 }
 
 # 备份服务端配置数据 (导出当前目录)
@@ -531,14 +742,60 @@ restore_config() {
     cp -f "$target_file" "${srv_dir}/data/config.json"
     echo -e "${GREEN}✓ 备份文件已写入 ${srv_dir}/data/config.json${PLAIN}"
 
-    # 重启服务端加载新配置
     detect_init_sys
     if [ "$INIT_SYS" = "systemd" ]; then
         systemctl restart aegis-server 2>/dev/null || true
     elif [ "$INIT_SYS" = "openrc" ]; then
         rc-service aegis-server restart 2>/dev/null || true
+    elif [ "$INIT_SYS" = "openwrt" ]; then
+        ${OPENWRT_INIT_DIR}/aegis-server restart 2>/dev/null || true
     fi
     echo -e "${GREEN}✅ 配置与全部节点已满血恢复并重启生效！${PLAIN}"
+}
+
+# 彻底卸载全部 (Master + Agent)
+uninstall_all() {
+    check_root
+    detect_init_sys
+    echo -e "${RED}=================================================================${PLAIN}"
+    echo -e "${RED}⚠️  警告: 此操作将彻底卸载并清理 主控端 + 受控端 全部文件与服务！${PLAIN}"
+    echo -e "${RED}=================================================================${PLAIN}"
+    read -rp "确定要彻底卸载天阙·神盾全部探针吗？[y/N]: " confirm
+    if [[ "$confirm" =~ ^[yY]$ ]]; then
+        if [ "$INIT_SYS" = "systemd" ]; then
+            systemctl stop aegis-server 2>/dev/null || true
+            systemctl disable aegis-server 2>/dev/null || true
+            rm -f "${SYSTEMD_DIR}/aegis-server.service"
+
+            systemctl stop aegis-agent 2>/dev/null || true
+            systemctl disable aegis-agent 2>/dev/null || true
+            rm -f "${SYSTEMD_DIR}/aegis-agent.service"
+            systemctl daemon-reload
+        elif [ "$INIT_SYS" = "openrc" ]; then
+            rc-service aegis-server stop 2>/dev/null || true
+            rc-update del aegis-server default 2>/dev/null || true
+            rm -f /etc/init.d/aegis-server
+            rc-service aegis-agent stop 2>/dev/null || true
+            rc-update del aegis-agent default 2>/dev/null || true
+            rm -f /etc/init.d/aegis-agent
+        elif [ "$INIT_SYS" = "openwrt" ]; then
+            ${OPENWRT_INIT_DIR}/aegis-server stop 2>/dev/null || true
+            ${OPENWRT_INIT_DIR}/aegis-server disable 2>/dev/null || true
+            rm -f "${OPENWRT_INIT_DIR}/aegis-server"
+
+            ${OPENWRT_INIT_DIR}/aegis-agent stop 2>/dev/null || true
+            ${OPENWRT_INIT_DIR}/aegis-agent disable 2>/dev/null || true
+            rm -f "${OPENWRT_INIT_DIR}/aegis-agent"
+        fi
+        pkill -9 -x aegis_server 2>/dev/null || true
+        pkill -9 -x aegis_agent 2>/dev/null || true
+        killall -9 aegis_server 2>/dev/null || true
+        killall -9 aegis_agent 2>/dev/null || true
+        rm -rf "$INSTALL_DIR"
+        echo -e "${GREEN}✅ 已彻底清理并卸载全部探针组件。${PLAIN}"
+    else
+        echo -e "${CYAN}已取消。${PLAIN}"
+    fi
 }
 
 # ==================== 命令行非交互式入口 ====================
@@ -553,6 +810,14 @@ while [[ $# -gt 0 ]]; do
                 esac
             done
             install_master
+            exit 0
+            ;;
+        --update-master)
+            update_master
+            exit 0
+            ;;
+        --uninstall-master)
+            uninstall_master
             exit 0
             ;;
         --agent)
@@ -575,6 +840,14 @@ while [[ $# -gt 0 ]]; do
             update_agent_binary
             exit 0
             ;;
+        --uninstall-agent)
+            uninstall_agent
+            exit 0
+            ;;
+        --uninstall-all)
+            uninstall_all
+            exit 0
+            ;;
         --backup)
             backup_config
             exit 0
@@ -592,50 +865,46 @@ done
 # ==================== 交互式主菜单 ====================
 show_menu() {
     detect_init_sys
+    detect_arch
     clear
     echo -e "${CYAN}=================================================================${PLAIN}"
-    echo -e "${CYAN}🛡️  天阙·神盾安全探针 (AegisProbe) 一键管理脚本 (支持软路由/VPS)${PLAIN}"
-    echo -e "${CYAN}    当前系统: ${INIT_SYS} | 零 GPU 负担 | 纯单向推送 | 真实 IP 脱敏   ${PLAIN}"
+    echo -e "${CYAN}🛡️  天阙·神盾安全探针 (AegisProbe) 一键管理控制台 ${PLAIN}"
+    echo -e "${CYAN}    脚本版本: ${SCRIPT_VERSION} | 机器架构: ${GOARCH} | 运行环境: ${INIT_SYS}${PLAIN}"
+    echo -e "${CYAN}    安全准则: 纯单向推送 | 零入站端口 | 真实 IP 脱敏 | 支持软路由/VPS${PLAIN}"
     echo -e "${CYAN}=================================================================${PLAIN}"
-    echo -e " ${GREEN}1.${PLAIN} 安装 / 更新 探针服务端 (Master 主控大屏与后台)"
-    echo -e " ${GREEN}2.${PLAIN} 安装 / 更新 探针受控端 (Agent 被控节点/软路由)"
+    echo -e "${BLUE}【服务端管理 (Master 主控大屏与后台)】:${PLAIN}"
+    echo -e " ${GREEN} 1.${PLAIN} 安装 探针服务端 (Master)"
+    echo -e " ${GREEN} 2.${PLAIN} 更新 探针服务端 (Master 二进制热升级，保留配置)"
+    echo -e " ${RED} 3.${PLAIN} 卸载 探针服务端 (Master 停止服务并清理)"
+    echo -e " ${GREEN} 4.${PLAIN} 查看 服务端运行状态与管理员密码"
     echo -e "-----------------------------------------------------------------"
-    echo -e " ${GREEN}3.${PLAIN} 查看服务端状态与管理员密码"
-    echo -e " ${GREEN}4.${PLAIN} 重启服务端 (aegis-server)"
-    echo -e " ${GREEN}5.${PLAIN} 重启受控端 (aegis-agent)"
+    echo -e "${BLUE}【受控端管理 (Agent 节点采集探针)】:${PLAIN}"
+    echo -e " ${GREEN} 5.${PLAIN} 安装 探针受控端 (Agent 支持VPS/软路由)"
+    echo -e " ${GREEN} 6.${PLAIN} 更新 探针受控端 (Agent 二进制热升级)"
+    echo -e " ${RED} 7.${PLAIN} 卸载 探针受控端 (Agent 停止并卸载)"
     echo -e "-----------------------------------------------------------------"
-    echo -e " ${GREEN}6.${PLAIN} 备份主控配置数据 (导出全部节点与设置到当前目录)"
-    echo -e " ${GREEN}7.${PLAIN} 恢复主控配置数据 (从指定 json 备份文件一键恢复)"
+    echo -e "${BLUE}【运维与数据维护】:${PLAIN}"
+    echo -e " ${GREEN} 8.${PLAIN} 重启服务 (可选服务端/受控端)"
+    echo -e " ${GREEN} 9.${PLAIN} 备份主控配置数据 (导出全部节点与设置到当前目录)"
+    echo -e " ${GREEN}10.${PLAIN} 恢复主控配置数据 (从指定 json 备份文件一键恢复)"
+    echo -e " ${RED}11.${PLAIN} 彻底清理卸载全部 (Master + Agent)"
     echo -e "-----------------------------------------------------------------"
-    echo -e " ${RED}8.${PLAIN} 彻底卸载天阙·神盾探针"
-    echo -e "-----------------------------------------------------------------"
-    echo -e " ${BLUE}0.${PLAIN} 退出脚本"
+    echo -e " ${BLUE} 0.${PLAIN} 退出脚本"
     echo -e "${CYAN}=================================================================${PLAIN}"
-    read -rp "请输入选项编号 [0-8]: " num
+    read -rp "请输入选项编号 [0-11]: " num
 
     case "$num" in
         1) install_master ;;
-        2) install_agent ;;
-        3) view_server_status ;;
-        4)
-            if [ "$INIT_SYS" = "systemd" ]; then
-                systemctl restart aegis-server
-            else
-                ${OPENWRT_INIT_DIR}/aegis-server restart
-            fi
-            echo -e "${GREEN}服务端已重启${PLAIN}"
-            ;;
-        5)
-            if [ "$INIT_SYS" = "systemd" ]; then
-                systemctl restart aegis-agent
-            else
-                ${OPENWRT_INIT_DIR}/aegis-agent restart
-            fi
-            echo -e "${GREEN}受控端已重启${PLAIN}"
-            ;;
-        6) backup_config ;;
-        7) restore_config ;;
-        8) uninstall_all ;;
+        2) update_master ;;
+        3) uninstall_master ;;
+        4) view_server_status ;;
+        5) install_agent ;;
+        6) update_agent_binary ;;
+        7) uninstall_agent ;;
+        8) restart_services_menu ;;
+        9) backup_config ;;
+        10) restore_config ;;
+        11) uninstall_all ;;
         0) exit 0 ;;
         *) echo -e "${RED}输入错误，请输入有效数字！${PLAIN}" ;;
     esac

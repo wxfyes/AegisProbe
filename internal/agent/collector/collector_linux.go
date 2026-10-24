@@ -335,6 +335,7 @@ func (c *LinuxCollector) Collect() (*common.MetricsData, error) {
 	}
 
 	return &common.MetricsData{
+		Version:       common.Version,
 		CPUPercent:    cpuPercent,
 		MemoryUsed:    memUsed,
 		MemoryTotal:   memTotal,

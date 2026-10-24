@@ -151,6 +151,7 @@ func (c *WindowsCollector) Collect() (*common.MetricsData, error) {
 	v4, v6 := detectWindowsPublicIPs()
 
 	return &common.MetricsData{
+		Version:       common.Version,
 		CPUPercent:    cpuPercent,
 		MemoryUsed:    memUsed,
 		MemoryTotal:   memTotal,
