@@ -10,6 +10,7 @@
   let cachedData = null;
   let isLocked = false;
   let pollTimer = null;
+  let activeRouteQualityNode = '';
   const routeQualityHistoryCache = new Map();
 
   const dom = {
@@ -156,6 +157,7 @@
       btn.dataset.group = g;
       btn.textContent = g;
       btn.addEventListener('click', () => {
+        closeRouteQualityModal();
         currentGroup = g;
         dom.groupFilterBar.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
@@ -474,100 +476,83 @@
       row.querySelectorAll('.rq-history').forEach(container => {
         container.innerHTML = routeQualityHistoryChart(histories[container.dataset.carrier] || []);
       });
-      if (row.classList.contains('open')) positionRoutePopover(row);
     });
+    if (activeRouteQualityNode === nodeID) {
+      document.querySelectorAll('#routeQualityModal .rq-history').forEach(container => {
+        container.innerHTML = routeQualityHistoryChart(histories[container.dataset.carrier] || []);
+      });
+    }
   }
 
-  function positionRoutePopover(row) {
-    const popover = row.querySelector('.route-quality-popover');
-    if (!popover) return;
-    popover.style.left = '-2px';
-    popover.style.right = 'auto';
-    popover.style.top = 'calc(100% + 5px)';
-    popover.style.bottom = 'auto';
-    let rect = popover.getBoundingClientRect();
-    if (rect.right > window.innerWidth - 10) {
-      popover.style.left = 'auto';
-      popover.style.right = '-2px';
-      rect = popover.getBoundingClientRect();
+  function openRouteQualityModal(nodeID) {
+    const node = cachedData?.nodes?.find(item => item.id === nodeID);
+    if (!node) return;
+    activeRouteQualityNode = nodeID;
+    const history = routeQualityHistoryCache.get(nodeID)?.data || {};
+    const rows = Array.isArray(node.route_quality) ? node.route_quality : [];
+    const latest = rows.map(item => Date.parse(item.checked_at || '')).filter(Number.isFinite);
+    const latestAt = latest.length ? Math.max(...latest) : 0;
+    const staleAfter = Math.max(60, Number(cachedData?.route_quality_interval_sec) || 1800) * 2.5 * 1000;
+    const updated = latestAt
+      ? `${Date.now() - latestAt > staleAfter ? '数据滞后 · ' : ''}更新 ${new Date(latestAt).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })}`
+      : '尚未检测';
+    let modal = document.getElementById('routeQualityModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'routeQualityModal';
+      modal.className = 'route-quality-modal';
+      modal.innerHTML = '<div class="rq-modal-backdrop" data-rq-close></div><section class="rq-modal-panel" role="dialog" aria-modal="true" aria-labelledby="rqModalTitle"><header class="rq-modal-header"><div><h2 id="rqModalTitle">国内三网 ICMP</h2><div class="rq-modal-subtitle"></div></div><button type="button" class="rq-modal-close" aria-label="关闭">×</button></header><div class="rq-modal-results"></div><footer class="rq-modal-foot">从中国电信、移动、联通网络 Ping 此节点公网 IP · 24 小时历史</footer></section>';
+      document.body.appendChild(modal);
+      modal.addEventListener('click', event => {
+        if (event.target.closest('[data-rq-close], .rq-modal-close')) closeRouteQualityModal();
+      });
     }
-    if (rect.bottom > window.innerHeight - 10) {
-      popover.style.top = 'auto';
-      popover.style.bottom = 'calc(100% + 5px)';
-    }
+    modal.querySelector('.rq-modal-subtitle').textContent = `${node.name} · ${updated}`;
+    modal.querySelector('.rq-modal-results').innerHTML = routeQualityDetails(rows, history);
+    modal.classList.add('open');
+    modal.querySelector('.rq-modal-close').focus();
+    loadRouteQualityHistory(nodeID);
+  }
+
+  function closeRouteQualityModal() {
+    const modal = document.getElementById('routeQualityModal');
+    if (modal) modal.classList.remove('open');
+    activeRouteQualityNode = '';
   }
 
   function routeQualityRowHtml(node, enabled) {
     if (!enabled) return '';
     const rows = node.route_quality || [];
-    const latest = rows.map(x => Date.parse(x.checked_at || '')).filter(Number.isFinite);
-    const latestAt = latest.length ? Math.max(...latest) : 0;
-    const checkedTime = latestAt ? new Date(latestAt).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) : '';
-    const staleAfter = Math.max(60, Number(cachedData?.route_quality_interval_sec) || 1800) * 2.5 * 1000;
-    const checked = latestAt ? `${Date.now() - latestAt > staleAfter ? '数据滞后 · ' : ''}更新 ${checkedTime}` : '尚未检测';
-    const history = routeQualityHistoryCache.get(node.id)?.data || {};
     return `<div class="detail-row detail-route-quality" data-route-node="${escapeHtml(node.id)}">
       <span class="label">国内线路</span>
-      <button type="button" class="route-quality-trigger" aria-expanded="false" title="查看国内三网 ICMP 延迟与丢包">${routeQualitySummary(rows)} <span aria-hidden="true">⌄</span></button>
-      <div class="route-quality-popover" role="dialog" aria-label="国内三网 ICMP 延迟与丢包">
-        <div class="rq-popover-title"><b>国内三网 ICMP</b><span>${checked}</span></div>
-        ${routeQualityDetails(rows, history)}
-        <div class="rq-popover-foot">从中国运营商网络 Ping 此节点公网 IP</div>
-      </div>
+      <button type="button" class="route-quality-trigger" aria-haspopup="dialog" title="点击查看国内三网 ICMP 延迟与丢包">${routeQualitySummary(rows)} <span aria-hidden="true">⌄</span></button>
     </div>`;
   }
 
   function syncRouteQuality(card, node, enabled) {
     const existing = card.querySelector('.detail-route-quality');
-    if (!enabled) { if (existing) existing.remove(); card.classList.remove('route-popover-open'); return; }
+    if (!enabled) { if (existing) existing.remove(); if (activeRouteQualityNode === node.id) closeRouteQualityModal(); return; }
     const html = routeQualityRowHtml(node, true);
     if (!existing) {
       const network = card.querySelector('.detail-network');
       if (network) network.insertAdjacentHTML('afterend', html);
       return;
     }
-    const open = existing.classList.contains('open');
     existing.outerHTML = html;
-    const updated = card.querySelector('.detail-route-quality');
-    if (updated && open) { updated.classList.add('open'); card.classList.add('route-popover-open'); updated.querySelector('.route-quality-trigger').setAttribute('aria-expanded', 'true'); }
   }
 
   dom.nodeGrid.addEventListener('click', (event) => {
     const trigger = event.target.closest('.route-quality-trigger');
     if (trigger) {
-      const row = trigger.closest('.detail-route-quality');
-      const card = trigger.closest('.node-card');
-      const open = row.classList.toggle('open');
-      card.classList.toggle('route-popover-open', open);
-      trigger.setAttribute('aria-expanded', String(open));
-      if (open) { positionRoutePopover(row); loadRouteQualityHistory(card.dataset.id); }
+      const nodeID = trigger.closest('.node-card')?.dataset.id;
+      if (nodeID && activeRouteQualityNode === nodeID) closeRouteQualityModal();
+      else if (nodeID) openRouteQualityModal(nodeID);
       event.stopPropagation();
       return;
     }
-    if (!event.target.closest('.route-quality-popover')) closeRoutePopovers();
   });
 
-  dom.nodeGrid.addEventListener('pointerover', event => {
-    const trigger = event.target.closest('.route-quality-trigger');
-    const row = trigger && trigger.closest('.detail-route-quality');
-    if (row && !row.contains(event.relatedTarget)) { positionRoutePopover(row); loadRouteQualityHistory(row.dataset.routeNode); }
-  });
-  dom.nodeGrid.addEventListener('focusin', event => {
-    const trigger = event.target.closest('.route-quality-trigger');
-    if (trigger) loadRouteQualityHistory(trigger.closest('.detail-route-quality').dataset.routeNode);
-  });
-
-  document.addEventListener('click', (event) => {
-    if (!event.target.closest('.detail-route-quality')) closeRoutePopovers();
-  });
-  document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeRoutePopovers(); });
-  function closeRoutePopovers() {
-    dom.nodeGrid.querySelectorAll('.detail-route-quality.open').forEach(row => {
-      row.classList.remove('open');
-      row.querySelector('.route-quality-trigger')?.setAttribute('aria-expanded', 'false');
-      row.closest('.node-card')?.classList.remove('route-popover-open');
-    });
-  }
+  document.addEventListener('keydown', event => { if (event.key === 'Escape') closeRouteQualityModal(); });
 
   // 工具辅助函数
   function formatBytes(b) {

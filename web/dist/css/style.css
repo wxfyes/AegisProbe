@@ -782,31 +782,8 @@ body {
 [data-theme="dark"] .route-quality-trigger { color: #7dd3fc; background: rgba(14,165,233,.16); }
 .route-quality-popover {
   display: none;
-  position: absolute;
-  z-index: 40;
-  left: -2px;
-  top: calc(100% + 5px);
-  width: min(340px, calc(100vw - 24px));
-  max-height: min(76vh, 620px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 14px;
-  border: 1px solid rgba(14,165,233,.3);
-  border-radius: 11px;
-  background: var(--card-bg);
-  color: var(--text-main);
-  box-shadow: 0 12px 32px rgba(15,23,42,.22);
-  font: 13px/1.5 var(--font-family);
-  font-synthesis: none;
-  font-kerning: normal;
 }
-.detail-route-quality:hover .route-quality-popover,
-.detail-route-quality:focus-within .route-quality-popover,
-.detail-route-quality.open .route-quality-popover { display: block; }
-.route-popover-open { z-index: 20; }
-.rq-popover-title { display:flex; justify-content:space-between; align-items:center; padding-bottom:8px; margin-bottom:4px; border-bottom:1px solid var(--card-border); }
-.rq-popover-title b { font-size:13px; }
-.rq-popover-title span, .rq-network, .rq-popover-foot { color:var(--text-sub); font-size:12px; }
+.rq-network, .rq-modal-foot { color:var(--text-sub); font-size:12px; }
 .rq-result { display:grid; grid-template-columns:52px minmax(0,1fr); align-items:center; gap:5px 9px; padding:9px 2px; border-bottom:1px solid var(--card-border); }
 .rq-carrier { display:inline-flex; align-items:center; gap:6px; font-weight:800; }
 .rq-dot { width:8px; height:8px; border-radius:50%; display:inline-block; }
@@ -822,10 +799,25 @@ body {
 .rq-latency-line { fill:none; stroke:#0284c7; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
 .rq-latency-dots { fill:#0284c7; stroke:var(--card-bg); stroke-width:1; }
 .rq-history-empty { padding:8px 0 5px; color:var(--text-sub); font-size:12px; }
-.rq-popover-foot { padding-top:8px; }
-
 .detail-route-quality { padding:3px 6px; margin:1px -5px; border-radius:8px; background:var(--network-highlight-bg); }
-.rq-popover-title { min-height:28px; }
+
+.route-quality-modal { display:none; position:fixed; inset:0; z-index:1000; align-items:center; justify-content:center; padding:20px; }
+.route-quality-modal.open { display:flex; }
+.rq-modal-backdrop { position:absolute; inset:0; background:rgba(15,23,42,.58); }
+.rq-modal-panel { position:relative; width:min(940px, calc(100vw - 32px)); max-height:min(88vh, 820px); overflow:auto; overscroll-behavior:contain; padding:20px; border:1px solid var(--card-border); border-radius:16px; background:var(--card-bg); color:var(--text-main); box-shadow:0 24px 70px rgba(15,23,42,.32); font:14px/1.55 var(--font-family); font-synthesis:none; font-kerning:normal; }
+.rq-modal-header { display:flex; justify-content:space-between; align-items:center; gap:16px; padding-bottom:14px; margin-bottom:14px; border-bottom:1px solid var(--card-border); }
+.rq-modal-header h2 { margin:0; font-size:19px; line-height:1.3; }
+.rq-modal-subtitle { margin-top:4px; color:var(--text-sub); font-size:13px; }
+.rq-modal-close { flex:0 0 auto; width:38px; height:38px; border:1px solid var(--card-border); border-radius:10px; background:var(--panel-bg); color:var(--text-main); font-size:25px; line-height:1; cursor:pointer; }
+.rq-modal-close:hover { background:var(--network-highlight-bg); }
+.rq-modal-results { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:12px; }
+.rq-modal-results .rq-result { align-content:start; grid-template-columns:minmax(0, 1fr); gap:8px; min-width:0; padding:13px; border:1px solid var(--card-border); border-radius:12px; background:var(--panel-bg); }
+.rq-modal-results .rq-values { grid-row:2; }
+.rq-modal-results .rq-values { min-width:0; white-space:normal; overflow-wrap:anywhere; }
+.rq-modal-results .rq-network { grid-column:1; min-height:18px; }
+.rq-modal-results .rq-history { grid-column:1; }
+.rq-modal-foot { padding-top:14px; text-align:center; }
+@media (max-width:700px) { .route-quality-modal { padding:10px; } .rq-modal-panel { width:100%; max-height:92vh; padding:15px; } .rq-modal-results { grid-template-columns:1fr; } .rq-modal-results .rq-result { grid-template-columns:minmax(0,1fr); } }
 
 .detail-row {
   display: flex;
