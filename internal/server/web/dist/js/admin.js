@@ -61,6 +61,9 @@
     cfgRouteProbeCount: document.getElementById('cfgRouteProbeCount'),
     cfgRouteTimeout: document.getElementById('cfgRouteTimeout'),
     cfgRoutePackets: document.getElementById('cfgRoutePackets'),
+    cfgRouteAlertEnabled: document.getElementById('cfgRouteAlertEnabled'),
+    cfgRouteAlertLatency: document.getElementById('cfgRouteAlertLatency'),
+    cfgRouteAlertLoss: document.getElementById('cfgRouteAlertLoss'),
     routeQualityUsage: document.getElementById('routeUsageEstimate'),
     routeQualityRunStatus: document.getElementById('routeQualityRunStatus'),
     btnTriggerRouteQuality: document.getElementById('btnTriggerRouteQuality'),
@@ -234,6 +237,9 @@
     if (dom.cfgRouteProbeCount) dom.cfgRouteProbeCount.value = rq.probe_count || 1;
     if (dom.cfgRouteTimeout) dom.cfgRouteTimeout.value = rq.timeout_sec || 10;
     if (dom.cfgRoutePackets) dom.cfgRoutePackets.value = rq.packets || 5;
+    if (dom.cfgRouteAlertEnabled) dom.cfgRouteAlertEnabled.checked = !!rq.alert_enabled;
+    if (dom.cfgRouteAlertLatency) dom.cfgRouteAlertLatency.value = rq.alert_latency_ms || 200;
+    if (dom.cfgRouteAlertLoss) dom.cfgRouteAlertLoss.value = rq.alert_loss_pct || 5;
     toggleRouteProvider();
     updateRouteUsageEstimate();
 
@@ -444,6 +450,9 @@
       probe_count: parseInt(dom.cfgRouteProbeCount.value, 10),
       timeout_sec: parseInt(dom.cfgRouteTimeout.value, 10),
       packets: parseInt(dom.cfgRoutePackets.value, 10),
+      alert_enabled: !!dom.cfgRouteAlertEnabled.checked,
+      alert_latency_ms: parseFloat(dom.cfgRouteAlertLatency.value),
+      alert_loss_pct: parseFloat(dom.cfgRouteAlertLoss.value),
       telecom_magic: dom.cfgRouteTelecom.value.trim(),
       unicom_magic: dom.cfgRouteUnicom.value.trim(),
       mobile_magic: dom.cfgRouteMobile.value.trim(),
@@ -509,7 +518,7 @@
     const cap = (authenticated || tokenNew) ? 500 : 250;
     const color = hourly > cap ? '#dc2626' : hourly >= cap * 0.8 ? '#d97706' : '#047857';
     const rounded = seconds % 60 === 0 ? `${seconds / 60} 分钟` : `${seconds} 秒`;
-    dom.routeQualityUsage.innerHTML = `📊 当前 ${count} 台节点 × 3 家运营商 × ${probes} 个探针 ÷ 每 ${rounded} 一轮 ≈ <b style="color:${color}">${hourly} 次/小时</b>。额度参考：${authenticated || tokenNew ? '已认证 500' : '匿名 250'} 次/小时。${hourly > cap ? '<br><b style="color:#dc2626">超过参考额度，保存时会被拒绝；请减少探针数或延长间隔。</b>' : hourly >= cap * .8 ? '<br><b style="color:#b45309">已接近参考额度；匿名额度还会与同一出口 IP 的其他用户共享。</b>' : '<br>用量在参考额度内。接口每轮逐个调度，实际结果受中国运营商在线探针数量影响。'}`;
+    dom.routeQualityUsage.innerHTML = `📊 当前 ${count} 台节点 × 3 家运营商 × ${probes} 个探针 ÷ 每 ${rounded} 一轮 ≈ <b style="color:${color}">${hourly} 次/小时</b>。额度参考：${authenticated || tokenNew ? '已认证 500' : '匿名 250'} 次/小时。${hourly > cap ? '<br><b style="color:#dc2626">超过参考额度，保存时会被拒绝；请减少探针数或延长间隔。</b>' : hourly >= cap * .8 ? '<br><b style="color:#b45309">已接近参考额度；匿名额度还会与同一出口 IP 的其他用户共享。</b>' : '<br>常规用量在参考额度内；主控每轮会预查剩余额度，不足则跳过整轮。修改检测参数保存或手动检测会额外触发一轮。'}`;
   }
 
   [dom.cfgRouteProbeCount, dom.cfgRouteInterval, dom.cfgRouteAPIToken].forEach(el => el && el.addEventListener('input', updateRouteUsageEstimate));

@@ -81,6 +81,11 @@ $env:GOOS = "windows"; $env:GOARCH = "amd64"; $env:GOARM = ""
 go build -ldflags "-s -w" -o "$binDir/aegis_ping_windows_amd64.exe" ./cmd/aegis-ping
 Copy-Item "$binDir/aegis_ping_windows_amd64.exe" "$distDir/aegis-ping/aegis_ping_windows_amd64.exe" -Force
 
+Write-Host "[Aegis-Ping 6/6] Building Ping Probe (Linux 386)..." -ForegroundColor Magenta
+$env:GOOS = "linux"; $env:GOARCH = "386"; $env:GOARM = ""
+go build -ldflags "-s -w" -o "$binDir/aegis_ping_linux_386" ./cmd/aegis-ping
+Copy-Item "$binDir/aegis_ping_linux_386" "$distDir/aegis-ping/aegis_ping_linux_386" -Force
+
 # 拷贝安装脚本
 Copy-Item "scripts/install_aegis_ping.sh" "$distDir/aegis-ping/install_aegis_ping.sh" -Force
 

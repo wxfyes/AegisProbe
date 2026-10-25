@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"tianque_probe/internal/agent/reporter"
+	"tianque_probe/internal/common"
 )
 
 func main() {
@@ -21,7 +22,7 @@ func main() {
 	flag.Parse()
 
 	if *version {
-		fmt.Println("TianQue-Probe (AegisProbe) Agent v1.0.0 (Pure Push-Only)")
+		fmt.Printf("TianQue-Probe (AegisProbe) Agent %s (Pure Push-Only)\n", common.Version)
 		return
 	}
 

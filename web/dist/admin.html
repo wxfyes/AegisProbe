@@ -251,6 +251,13 @@
       gap: 10px;
     }
 
+    .route-alert-settings { display:grid; grid-template-columns:minmax(260px,1fr) minmax(280px,1fr); gap:14px; align-items:center; padding:12px 14px; margin:10px 0 4px; border:1px solid var(--panel-border); border-radius:10px; background:var(--card-bg); }
+    .route-alert-toggle { display:flex; align-items:flex-start; gap:9px; cursor:pointer; color:var(--text-main); }
+    .route-alert-toggle input { margin-top:3px; accent-color:#0284c7; }
+    .route-alert-toggle small { display:block; margin-top:4px; color:var(--text-sub); line-height:1.5; }
+    .route-alert-thresholds { display:grid; grid-template-columns:1fr 1fr; gap:10px; color:var(--text-sub); font-size:12px; font-weight:600; }
+    .route-alert-thresholds .form-input { margin-top:5px; }
+
     .code-box {
       background: #0f172a;
       border: 1px solid var(--panel-border);
@@ -314,6 +321,7 @@
         grid-template-columns: 1fr;
         gap: 8px;
       }
+      .route-alert-settings { grid-template-columns:1fr; }
       .modal-box {
         width: 95%;
         max-width: 480px;
@@ -568,10 +576,18 @@
                 </div>
                 <div class="form-group">
                   <label class="form-label">每个探针发送 ICMP 包数</label>
-                  <input id="cfgRoutePackets" type="number" class="form-input" min="1" max="20" value="5">
+                  <input id="cfgRoutePackets" type="number" class="form-input" min="1" max="16" value="5">
+                  <div style="font-size:11px;color:var(--text-sub);margin-top:4px;">Globalping 单次最多 16 个 ICMP 包；修改检测参数后保存会立即运行一轮。</div>
                 </div>
               </div>
               <div id="routeUsageEstimate" style="border-radius:8px;padding:11px 13px;background:rgba(14,165,233,.08);border:1px solid rgba(14,165,233,.2);font-size:12px;line-height:1.7;margin:4px 0 12px;"></div>
+              <div class="route-alert-settings">
+                <label class="route-alert-toggle"><input id="cfgRouteAlertEnabled" type="checkbox"> <span><b>三网异常时发送 Telegram 告警</b><small>延迟或丢包任一项达到阈值，连续两轮后提醒；恢复后通知。需先启用并配置 Telegram，避免单次抖动刷屏。</small></span></label>
+                <div class="route-alert-thresholds">
+                  <label>延迟阈值（毫秒）<input id="cfgRouteAlertLatency" type="number" class="form-input" min="1" max="60000" value="200"></label>
+                  <label>丢包阈值（百分比）<input id="cfgRouteAlertLoss" type="number" class="form-input" min="0.1" max="100" step="0.1" value="5"></label>
+                </div>
+              </div>
               <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;">
                 <button type="button" id="btnTriggerRouteQuality" class="btn-sm" style="padding:9px 14px;background:#0284c7;color:#fff;border-color:#0284c7;">⚡ 立即检测一轮</button>
                 <span id="routeQualityRunStatus" style="font-size:12px;color:var(--text-sub);"></span>

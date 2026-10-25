@@ -70,6 +70,7 @@ func (m *Manager) loadOrInit() error {
 		RouteQuality: common.RouteQualityConfig{
 			Enabled: true, Provider: "globalping", APIBaseURL: "https://api.globalping.io",
 			IntervalSec: 1800, ProbeCount: 1, TimeoutSec: 10, Packets: 5,
+			AlertEnabled: false, AlertLatencyMS: 200, AlertLossPct: 5,
 			TelecomMagic: "AS4134+China", UnicomMagic: "AS4837+China", MobileMagic: "AS9808+China",
 		},
 		Nodes: []common.NodeConfig{
@@ -139,6 +140,7 @@ func (m *Manager) ensureDefaults() {
 		m.cfg.RouteQuality = common.RouteQualityConfig{
 			Enabled: true, Provider: "globalping", APIBaseURL: "https://api.globalping.io",
 			IntervalSec: 1800, ProbeCount: 1, TimeoutSec: 10, Packets: 5,
+			AlertEnabled: false, AlertLatencyMS: 200, AlertLossPct: 5,
 			TelecomMagic: "AS4134+China", UnicomMagic: "AS4837+China", MobileMagic: "AS9808+China",
 		}
 	}
@@ -154,8 +156,14 @@ func (m *Manager) ensureDefaults() {
 	if m.cfg.RouteQuality.TimeoutSec < 3 || m.cfg.RouteQuality.TimeoutSec > 60 {
 		m.cfg.RouteQuality.TimeoutSec = 10
 	}
-	if m.cfg.RouteQuality.Packets < 1 || m.cfg.RouteQuality.Packets > 20 {
+	if m.cfg.RouteQuality.Packets < 1 || m.cfg.RouteQuality.Packets > 16 {
 		m.cfg.RouteQuality.Packets = 5
+	}
+	if m.cfg.RouteQuality.AlertLatencyMS <= 0 || m.cfg.RouteQuality.AlertLatencyMS > 60000 {
+		m.cfg.RouteQuality.AlertLatencyMS = 200
+	}
+	if m.cfg.RouteQuality.AlertLossPct <= 0 || m.cfg.RouteQuality.AlertLossPct > 100 {
+		m.cfg.RouteQuality.AlertLossPct = 5
 	}
 	if m.cfg.RouteQuality.TelecomMagic == "" {
 		m.cfg.RouteQuality.TelecomMagic = "AS4134+China"
@@ -206,8 +214,14 @@ func (m *Manager) UpdateSettings(title, password, accessMode string, port, offli
 	if route.TimeoutSec < 3 || route.TimeoutSec > 60 {
 		return fmt.Errorf("三网检测超时必须在 3 至 60 秒之间")
 	}
-	if route.Packets < 1 || route.Packets > 20 {
-		return fmt.Errorf("每次 ICMP 包数必须在 1 至 20 之间")
+	if route.Packets < 1 || route.Packets > 16 {
+		return fmt.Errorf("Globalping ICMP 包数必须在 1 至 16 之间")
+	}
+	if route.AlertLatencyMS <= 0 || route.AlertLatencyMS > 60000 {
+		return fmt.Errorf("延迟告警阈值必须在 0 至 60000 毫秒之间")
+	}
+	if route.AlertLossPct <= 0 || route.AlertLossPct > 100 {
+		return fmt.Errorf("丢包告警阈值必须大于 0 且不超过 100%")
 	}
 	if route.Provider == "globalping" {
 		base := strings.TrimRight(strings.TrimSpace(route.APIBaseURL), "/")

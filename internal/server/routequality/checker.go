@@ -5,11 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,20 +23,31 @@ import (
 )
 
 type Checker struct {
-	cfgMgr  *config.Manager
-	store   *store.Store
-	client  *http.Client
-	mu      sync.Mutex
-	running bool
+	cfgMgr      *config.Manager
+	store       *store.Store
+	client      *http.Client
+	mu          sync.Mutex
+	running     bool
+	alertMu     sync.Mutex
+	alertStates map[string]routeAlertState
+	alertFn     func(string)
+}
+
+type routeAlertState struct {
+	badRounds int
+	alerted   bool
 }
 
 func NewChecker(cfgMgr *config.Manager, st *store.Store) *Checker {
-	return &Checker{cfgMgr: cfgMgr, store: st, client: &http.Client{Timeout: 15 * time.Second}}
+	return &Checker{cfgMgr: cfgMgr, store: st, client: &http.Client{Timeout: 15 * time.Second}, alertStates: make(map[string]routeAlertState)}
 }
+
+func (c *Checker) SetAlertCallback(fn func(string)) { c.alertFn = fn }
 
 func (c *Checker) Start(ctx context.Context) {
 	go func() {
 		var next time.Time
+		var lastInterval int
 		tick := time.NewTicker(5 * time.Second)
 		defer tick.Stop()
 		for {
@@ -43,12 +56,23 @@ func (c *Checker) Start(ctx context.Context) {
 				return
 			case <-tick.C:
 				cfg := c.cfgMgr.GetConfig().RouteQuality
-				if cfg.Enabled && (next.IsZero() || !time.Now().Before(next)) {
+				if !cfg.Enabled {
+					next = time.Time{}
+					lastInterval = 0
+					continue
+				}
+				interval := cfg.IntervalSec
+				if interval < 60 {
+					interval = 1800
+				}
+				if lastInterval != 0 && interval != lastInterval {
+					// A settings save already triggers the updated round. Re-anchor
+					// the next periodic run to the newly selected interval.
+					next = time.Now().Add(time.Duration(interval) * time.Second)
+				}
+				lastInterval = interval
+				if next.IsZero() || !time.Now().Before(next) {
 					c.Trigger()
-					interval := cfg.IntervalSec
-					if interval < 60 {
-						interval = 1800
-					}
 					next = time.Now().Add(time.Duration(interval) * time.Second)
 				}
 			}
@@ -80,8 +104,13 @@ func (c *Checker) run() {
 		return
 	}
 	nodes := cfg.Nodes
-	sem := make(chan struct{}, 3)
-	var wg sync.WaitGroup
+	type job struct {
+		nodeID   string
+		nodeName string
+		target   string
+		carrier  carrierConfig
+	}
+	jobs := make([]job, 0, len(nodes)*3)
 	for _, node := range nodes {
 		ipv4, ipv6, _, _, online := c.store.GetNodeRealInfo(node.ID)
 		if !online {
@@ -95,26 +124,124 @@ func (c *Checker) run() {
 			continue
 		}
 		for _, carrier := range carriers(settings) {
-			sem <- struct{}{}
-			wg.Add(1)
-			go func(nodeID, target string, carrier carrierConfig) {
-				defer wg.Done()
-				defer func() { <-sem }()
-				ctx, cancel := context.WithTimeout(context.Background(), time.Duration(settings.TimeoutSec+15)*time.Second)
-				defer cancel()
-				var result common.CarrierQuality
-				if settings.Provider == "custom" {
-					result = c.custom(ctx, settings, target, carrier)
-				} else {
-					result = c.globalping(ctx, settings, target, carrier)
-				}
-				result.Carrier = carrier.name
-				result.CheckedAt = time.Now().Format(time.RFC3339)
-				c.store.UpdateRouteQuality(nodeID, result)
-			}(node.ID, target, carrier)
+			jobs = append(jobs, job{nodeID: node.ID, nodeName: node.Name, target: target, carrier: carrier})
 		}
 	}
+	if len(jobs) == 0 {
+		return
+	}
+	if settings.Provider != "custom" {
+		planned := len(jobs) * settings.ProbeCount
+		if remaining, ok := c.globalpingRemaining(settings); ok && remaining < planned {
+			message := fmt.Sprintf("额度不足：剩余 %d 次，本轮预计需要 %d 次", remaining, planned)
+			checkedAt := time.Now().Format(time.RFC3339)
+			for _, j := range jobs {
+				c.store.UpdateRouteQuality(j.nodeID, common.CarrierQuality{Carrier: j.carrier.name, Status: "error", Message: message, CheckedAt: checkedAt})
+			}
+			log.Printf("[三网质量] 已跳过本轮，%s", message)
+			return
+		}
+	}
+	sem := make(chan struct{}, 3)
+	var wg sync.WaitGroup
+	for _, j := range jobs {
+		sem <- struct{}{}
+		wg.Add(1)
+		go func(j job) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(settings.TimeoutSec+15)*time.Second)
+			defer cancel()
+			var result common.CarrierQuality
+			if settings.Provider == "custom" {
+				result = c.custom(ctx, settings, j.target, j.carrier)
+			} else {
+				result = c.globalping(ctx, settings, j.target, j.carrier)
+			}
+			result.Carrier = j.carrier.name
+			result.CheckedAt = time.Now().Format(time.RFC3339)
+			c.store.UpdateRouteQuality(j.nodeID, result)
+			c.evaluateAlert(j.nodeID, j.nodeName, result, settings)
+		}(j)
+	}
 	wg.Wait()
+}
+
+func (c *Checker) evaluateAlert(nodeID, nodeName string, quality common.CarrierQuality, cfg common.RouteQualityConfig) {
+	key := nodeID + ":" + quality.Carrier
+	c.alertMu.Lock()
+	state := c.alertStates[key]
+	if !cfg.AlertEnabled {
+		delete(c.alertStates, key)
+		c.alertMu.Unlock()
+		return
+	}
+	if quality.Status != "ok" && quality.Status != "loss" {
+		state.badRounds = 0
+		c.alertStates[key] = state
+		c.alertMu.Unlock()
+		return
+	}
+	bad := quality.LatencyMS >= cfg.AlertLatencyMS || quality.LossPct >= cfg.AlertLossPct
+	var message string
+	if bad {
+		state.badRounds++
+		if state.badRounds >= 2 && !state.alerted {
+			state.alerted = true
+			message = fmt.Sprintf("🔴 <b>【三网线路质量告警】</b>\n<b>节点</b>：%s\n<b>线路</b>：%s\n<b>延迟</b>：%.1f ms（阈值 %.1f ms）\n<b>丢包</b>：%.1f%%（阈值 %.1f%%）\n已连续两轮达到异常阈值。", html.EscapeString(nodeName), html.EscapeString(quality.Carrier), quality.LatencyMS, cfg.AlertLatencyMS, quality.LossPct, cfg.AlertLossPct)
+		}
+	} else {
+		state.badRounds = 0
+		if state.alerted {
+			state.alerted = false
+			message = fmt.Sprintf("🟢 <b>【三网线路质量恢复】</b>\n<b>节点</b>：%s\n<b>线路</b>：%s\n<b>延迟</b>：%.1f ms\n<b>丢包</b>：%.1f%%", html.EscapeString(nodeName), html.EscapeString(quality.Carrier), quality.LatencyMS, quality.LossPct)
+		}
+	}
+	c.alertStates[key] = state
+	callback := c.alertFn
+	c.alertMu.Unlock()
+	if message != "" && callback != nil {
+		callback(message)
+	}
+}
+
+func (c *Checker) globalpingRemaining(cfg common.RouteQualityConfig) (int, bool) {
+	base := strings.TrimRight(cfg.APIBaseURL, "/")
+	if base == "" {
+		base = "https://api.globalping.io"
+	}
+	req, err := http.NewRequest(http.MethodGet, base+"/v1/limits", nil)
+	if err != nil {
+		return 0, false
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "TianQue-Probe/1.0 (ICMP route quality)")
+	if cfg.APIToken != "" {
+		req.Header.Set("Authorization", "Bearer "+cfg.APIToken)
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		log.Printf("[三网质量] 额度预检失败，继续执行检测: %v", err)
+		return 0, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("[三网质量] 额度预检返回 HTTP %d，继续执行检测", resp.StatusCode)
+		return 0, false
+	}
+	var limits struct {
+		RateLimit struct {
+			Measurements struct {
+				Create struct {
+					Remaining int `json:"remaining"`
+				} `json:"create"`
+			} `json:"measurements"`
+		} `json:"rateLimit"`
+	}
+	if json.NewDecoder(io.LimitReader(resp.Body, 64*1024)).Decode(&limits) != nil {
+		return 0, false
+	}
+	return limits.RateLimit.Measurements.Create.Remaining, true
 }
 
 type carrierConfig struct{ key, name, magic string }
@@ -183,11 +310,16 @@ func (c *Checker) globalping(ctx context.Context, cfg common.RouteQualityConfig,
 	}
 	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK {
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		log.Printf("[三网质量] Globalping 创建测量失败 (%s): HTTP %d %s", carrier.name, resp.StatusCode, strings.TrimSpace(string(msg)))
+		resp.Body.Close()
+		detail := globalpingErrorDetail(msg)
+		log.Printf("[三网质量] Globalping 创建测量失败 (%s): HTTP %d %s", carrier.name, resp.StatusCode, detail)
 		if resp.StatusCode == http.StatusTooManyRequests {
-			return common.CarrierQuality{Status: "error", Message: "接口额度/频率限制"}
+			return common.CarrierQuality{Status: "error", Message: "Globalping 每小时额度或频率限制 (HTTP 429)"}
 		}
-		return qualityError(fmt.Sprintf("接口返回 HTTP %d", resp.StatusCode))
+		if resp.StatusCode == http.StatusBadRequest {
+			return qualityError("Globalping 请求参数错误: " + detail)
+		}
+		return qualityError(fmt.Sprintf("Globalping 接口返回 HTTP %d: %s", resp.StatusCode, detail))
 	}
 	var created measurementResponse
 	location := resp.Header.Get("Location")
@@ -245,6 +377,33 @@ func (c *Checker) globalping(ctx context.Context, cfg common.RouteQualityConfig,
 		return aggregate(measurement.Results, carrier.name)
 	}
 	return qualityError("等待 Globalping 结果超时")
+}
+
+func globalpingErrorDetail(body []byte) string {
+	var payload struct {
+		Error struct {
+			Message string            `json:"message"`
+			Params  map[string]string `json:"params"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(body, &payload) == nil {
+		if len(payload.Error.Params) > 0 {
+			parts := make([]string, 0, len(payload.Error.Params))
+			for key, value := range payload.Error.Params {
+				parts = append(parts, key+": "+value)
+			}
+			sort.Strings(parts)
+			return strings.Join(parts, "; ")
+		}
+		if payload.Error.Message != "" {
+			return payload.Error.Message
+		}
+	}
+	detail := strings.TrimSpace(string(body))
+	if detail == "" {
+		return "服务方未提供错误详情"
+	}
+	return detail
 }
 
 func aggregate(results []struct {

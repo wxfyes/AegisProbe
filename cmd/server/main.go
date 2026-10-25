@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"tianque_probe/internal/common"
 	"tianque_probe/internal/server/auth"
 	"tianque_probe/internal/server/config"
 	"tianque_probe/internal/server/gfw"
@@ -29,7 +30,7 @@ func main() {
 	flag.Parse()
 
 	if *version {
-		fmt.Println("TianQue-Probe (AegisProbe) Server v1.0.0 (Zero Penetration Tunnel)")
+		fmt.Printf("TianQue-Probe (AegisProbe) Server %s (Zero Penetration Tunnel)\n", common.Version)
 		return
 	}
 
@@ -72,6 +73,7 @@ func main() {
 	gfwChecker := gfw.NewChecker(cfgMgr, st)
 	gfwChecker.Start(ctx)
 	routeQualityChecker := routequality.NewChecker(cfgMgr, st)
+	routeQualityChecker.SetAlertCallback(notifier.Push)
 	routeQualityChecker.Start(ctx)
 
 	// 启动后台心跳扫描协程 (每 10 秒巡检一次)

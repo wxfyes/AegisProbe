@@ -3,7 +3,7 @@ package common
 import "strings"
 
 // Version 定义天阙·神盾安全探针全局统一版本号
-const Version = "v1.2.5"
+const Version = "v1.2.6"
 
 // MetricsData 定义受控端 Agent 采集到的原始指标
 type MetricsData struct {
@@ -114,18 +114,21 @@ type ServerConfig struct {
 
 // RouteQualityConfig configures ICMP measurements from mainland China carrier probes.
 type RouteQualityConfig struct {
-	Enabled      bool   `json:"enabled"`
-	Provider     string `json:"provider"` // globalping or custom
-	APIBaseURL   string `json:"api_base_url"`
-	APIToken     string `json:"api_token,omitempty"`
-	IntervalSec  int    `json:"interval_sec"`
-	ProbeCount   int    `json:"probe_count"`
-	TimeoutSec   int    `json:"timeout_sec"`
-	Packets      int    `json:"packets"`
-	TelecomMagic string `json:"telecom_magic"`
-	UnicomMagic  string `json:"unicom_magic"`
-	MobileMagic  string `json:"mobile_magic"`
-	CustomURL    string `json:"custom_url"`
+	Enabled        bool    `json:"enabled"`
+	Provider       string  `json:"provider"` // globalping or custom
+	APIBaseURL     string  `json:"api_base_url"`
+	APIToken       string  `json:"api_token,omitempty"`
+	IntervalSec    int     `json:"interval_sec"`
+	ProbeCount     int     `json:"probe_count"`
+	TimeoutSec     int     `json:"timeout_sec"`
+	Packets        int     `json:"packets"`
+	AlertEnabled   bool    `json:"alert_enabled"`
+	AlertLatencyMS float64 `json:"alert_latency_ms"`
+	AlertLossPct   float64 `json:"alert_loss_pct"`
+	TelecomMagic   string  `json:"telecom_magic"`
+	UnicomMagic    string  `json:"unicom_magic"`
+	MobileMagic    string  `json:"mobile_magic"`
+	CustomURL      string  `json:"custom_url"`
 }
 
 // CarrierQuality is the cached ICMP result rendered on a node card.
@@ -210,11 +213,12 @@ type NodeCardView struct {
 
 // SummaryResponse 大屏前端聚合查询返回体
 type SummaryResponse struct {
-	SiteTitle           string          `json:"site_title"`
-	RouteQualityEnabled bool            `json:"route_quality_enabled"`
-	Summary             OverviewSummary `json:"summary"`
-	Groups              []string        `json:"groups"` // 所有存在的分组标签列表 (排重并置前 "所有")
-	Nodes               []NodeCardView  `json:"nodes"`
+	SiteTitle               string          `json:"site_title"`
+	RouteQualityEnabled     bool            `json:"route_quality_enabled"`
+	RouteQualityIntervalSec int             `json:"route_quality_interval_sec"`
+	Summary                 OverviewSummary `json:"summary"`
+	Groups                  []string        `json:"groups"` // 所有存在的分组标签列表 (排重并置前 "所有")
+	Nodes                   []NodeCardView  `json:"nodes"`
 }
 
 // CountryCodeToFlag 将两位国家代码 (如 HK, TW, US, JP, SG) 转换为对应 Unicode 国旗 Emoji

@@ -179,6 +179,7 @@ func (h *RouterHandler) handleNodesSummary(w http.ResponseWriter, r *http.Reques
 
 	summary := h.store.GetSummary(cfg.SiteTitle, cfg.Nodes, cfg.OfflineSec)
 	summary.RouteQualityEnabled = cfg.RouteQuality.Enabled
+	summary.RouteQualityIntervalSec = cfg.RouteQuality.IntervalSec
 	writeJSON(w, http.StatusOK, summary)
 }
 
@@ -386,6 +387,7 @@ func (h *RouterHandler) handleAdminConfig(w http.ResponseWriter, r *http.Request
 		} else if strings.TrimSpace(req.RouteQuality.APIToken) == "" || req.RouteQuality.APIToken == "******" {
 			req.RouteQuality.APIToken = h.cfgMgr.GetConfig().RouteQuality.APIToken
 		}
+		previousRouteQuality := h.cfgMgr.GetConfig().RouteQuality
 
 		if err := h.cfgMgr.UpdateSettings(
 			req.SiteTitle, pwd, req.AccessMode, req.ListenPort, req.OfflineSec,
@@ -404,7 +406,7 @@ func (h *RouterHandler) handleAdminConfig(w http.ResponseWriter, r *http.Request
 		if h.gfwChecker != nil && req.GFWCheckURL != "" {
 			h.gfwChecker.TriggerCheckNow()
 		}
-		if h.routeChecker != nil && req.RouteQuality.Enabled {
+		if h.routeChecker != nil && req.RouteQuality.Enabled && previousRouteQuality != h.cfgMgr.GetConfig().RouteQuality {
 			h.routeChecker.Trigger()
 		}
 

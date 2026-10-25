@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unsafe"
@@ -37,6 +38,7 @@ type memorystatusex struct {
 }
 
 type WindowsCollector struct {
+	ipMu             sync.RWMutex
 	lastIdleTime     uint64
 	lastKernelTime   uint64
 	lastUserTime     uint64
@@ -46,6 +48,10 @@ type WindowsCollector struct {
 	lastSocketSample time.Time
 	tcpConnections   int
 	udpSockets       int
+	cachedIP         string
+	cachedIPv4       string
+	cachedIPv6       string
+	lastIPCheck      time.Time
 }
 
 func newPlatformCollector() SystemCollector {
@@ -159,6 +165,46 @@ func (c *WindowsCollector) Collect() (*common.MetricsData, error) {
 	}
 
 	v4, v6 := detectWindowsPublicIPs()
+	c.ipMu.Lock()
+	if v4 != "" {
+		c.cachedIPv4 = v4
+		c.cachedIP = v4
+	}
+	if v6 != "" {
+		c.cachedIPv6 = v6
+		if v4 == "" {
+			c.cachedIP = v6
+		}
+	}
+	checkIP := c.lastIPCheck.IsZero() || now.Sub(c.lastIPCheck) >= 5*time.Minute
+	if checkIP {
+		c.lastIPCheck = now
+	}
+	ip, ipv4, ipv6 := c.cachedIP, c.cachedIPv4, c.cachedIPv6
+	c.ipMu.Unlock()
+	if checkIP {
+		go refreshPublicAddresses(func(detected string) {
+			parsed := net.ParseIP(detected)
+			if parsed == nil {
+				return
+			}
+			c.ipMu.Lock()
+			if parsed.To4() != nil {
+				c.cachedIPv4 = parsed.To4().String()
+			} else {
+				c.cachedIPv6 = parsed.String()
+			}
+			c.cachedIP = parsed.String()
+			c.ipMu.Unlock()
+		}, func(string) {})
+	}
+	if ip == "" {
+		if ipv4 != "" {
+			ip = ipv4
+		} else {
+			ip = ipv6
+		}
+	}
 
 	return &common.MetricsData{
 		Version:        common.Version,
@@ -182,9 +228,9 @@ func (c *WindowsCollector) Collect() (*common.MetricsData, error) {
 		CPUCores:       runtime.NumCPU(),
 		Arch:           runtime.GOARCH,
 		OS:             "windows",
-		PublicIP:       v4,
-		IPv4:           v4,
-		IPv6:           v6,
+		PublicIP:       ip,
+		IPv4:           ipv4,
+		IPv6:           ipv6,
 	}, nil
 }
 

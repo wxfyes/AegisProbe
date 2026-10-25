@@ -4,14 +4,12 @@ package collector
 
 import (
 	"bufio"
-	"encoding/json"
-	"io"
 	"net"
-	"net/http"
 	"os"
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -19,6 +17,7 @@ import (
 )
 
 type LinuxCollector struct {
+	ipMu          sync.RWMutex
 	lastCPUTotal  uint64
 	lastCPUIdle   uint64
 	lastNetIn     uint64
@@ -29,7 +28,7 @@ type LinuxCollector struct {
 	cachedIPv4    string
 	cachedIPv6    string
 	cachedCountry string
-	lastGeoCheck  time.Time
+	lastIPCheck   time.Time
 }
 
 func newPlatformCollector() SystemCollector {
@@ -308,71 +307,60 @@ func (c *LinuxCollector) Collect() (*common.MetricsData, error) {
 
 	// 1. 本地网卡扫描全局单播双栈 IP (毫秒级，不耗外网流量)
 	v4, v6 := detectLocalPublicIPs()
+	c.ipMu.Lock()
 	if v4 != "" {
 		c.cachedIPv4 = v4
+		c.cachedIP = v4
 	}
 	if v6 != "" {
 		c.cachedIPv6 = v6
-	}
-
-	// 2. 双栈智能补齐引擎：
-	// 若缺少 v4 或 v6，每 15~30 秒重试探测直到成功；两栈齐全后降频为 1 小时校验一次
-	shouldCheck := false
-	if c.cachedCountry == "" || (c.cachedIPv4 == "" && c.cachedIPv6 == "") {
-		if time.Since(c.lastGeoCheck) > 10*time.Second {
-			shouldCheck = true
+		if v4 == "" {
+			c.cachedIP = v6
 		}
-	} else if c.cachedIPv4 == "" || c.cachedIPv6 == "" {
-		if time.Since(c.lastGeoCheck) > 20*time.Second {
-			shouldCheck = true
-		}
-	} else if time.Since(c.lastGeoCheck) > 1*time.Hour {
-		shouldCheck = true
 	}
+	// NAT/dynamic-address nodes cannot see their public address on a local
+	// interface. Refresh both public address families every five minutes even
+	// when a cached value exists, so a changed ISP lease replaces the old value.
+	shouldCheck := c.lastIPCheck.IsZero() || now.Sub(c.lastIPCheck) >= 5*time.Minute
 
+	var checkNow bool
 	if shouldCheck {
-		c.lastGeoCheck = now
+		c.lastIPCheck = now
+		checkNow = true
+	}
+	primaryIP, ipv4, ipv6, country := c.cachedIP, c.cachedIPv4, c.cachedIPv6, c.cachedCountry
+	c.ipMu.Unlock()
+	if checkNow {
 		go func() {
-			client := &http.Client{Timeout: 4 * time.Second}
-			// 探测地理国家代码
-			if c.cachedCountry == "" {
-				resp, err := client.Get("https://api.ip.sb/geoip")
-				if err == nil {
-					defer resp.Body.Close()
-					var res struct {
-						IP          string `json:"ip"`
-						CountryCode string `json:"country_code"`
-					}
-					if json.NewDecoder(resp.Body).Decode(&res) == nil {
-						if res.CountryCode != "" {
-							c.cachedCountry = res.CountryCode
-						}
-						if res.IP != "" {
-							c.cachedIP = res.IP
-							if strings.Contains(res.IP, ":") && c.cachedIPv6 == "" {
-								c.cachedIPv6 = res.IP
-							} else if strings.Contains(res.IP, ".") && c.cachedIPv4 == "" {
-								c.cachedIPv4 = res.IP
-							}
-						}
-					}
+			refreshPublicAddresses(func(ip string) {
+				parsed := net.ParseIP(ip)
+				if parsed == nil {
+					return
 				}
-			}
-
-			// 若依然缺少 v4，尝试多源冗余查询
-			if c.cachedIPv4 == "" {
-				if detectedV4 := queryPublicIPv4(); detectedV4 != "" {
-					c.cachedIPv4 = detectedV4
+				c.ipMu.Lock()
+				if parsed.To4() != nil {
+					c.cachedIPv4 = parsed.To4().String()
+				} else {
+					c.cachedIPv6 = parsed.String()
 				}
-			}
-
-			// 若依然缺少 v6，尝试多源冗余查询
-			if c.cachedIPv6 == "" {
-				if detectedV6 := queryPublicIPv6(); detectedV6 != "" {
-					c.cachedIPv6 = detectedV6
+				c.cachedIP = ip
+				c.ipMu.Unlock()
+			}, func(country string) {
+				if country == "" {
+					return
 				}
-			}
+				c.ipMu.Lock()
+				c.cachedCountry = country
+				c.ipMu.Unlock()
+			})
 		}()
+	}
+	if primaryIP == "" {
+		if ipv4 != "" {
+			primaryIP = ipv4
+		} else {
+			primaryIP = ipv6
+		}
 	}
 
 	return &common.MetricsData{
@@ -397,10 +385,10 @@ func (c *LinuxCollector) Collect() (*common.MetricsData, error) {
 		CPUCores:       runtime.NumCPU(),
 		Arch:           runtime.GOARCH,
 		OS:             c.cachedOS,
-		PublicIP:       c.cachedIP,
-		IPv4:           c.cachedIPv4,
-		IPv6:           c.cachedIPv6,
-		CountryCode:    c.cachedCountry,
+		PublicIP:       primaryIP,
+		IPv4:           ipv4,
+		IPv6:           ipv6,
+		CountryCode:    country,
 	}, nil
 }
 
@@ -447,52 +435,4 @@ func detectLocalPublicIPs() (ipv4 string, ipv6 string) {
 		}
 	}
 	return ipv4, ipv6
-}
-
-func queryPublicIPv4() string {
-	endpoints := []string{
-		"https://api-ipv4.ip.sb/ip",
-		"https://v4.ident.me",
-		"https://api4.ipify.org",
-		"http://ipv4.icanhazip.com",
-	}
-	client := &http.Client{Timeout: 3 * time.Second}
-	for _, ep := range endpoints {
-		resp, err := client.Get(ep)
-		if err == nil {
-			b, err := io.ReadAll(resp.Body)
-			resp.Body.Close()
-			if err == nil && len(b) > 0 {
-				ip := strings.TrimSpace(string(b))
-				if netIP := net.ParseIP(ip); netIP != nil && netIP.To4() != nil {
-					return ip
-				}
-			}
-		}
-	}
-	return ""
-}
-
-func queryPublicIPv6() string {
-	endpoints := []string{
-		"https://api-ipv6.ip.sb/ip",
-		"https://v6.ident.me",
-		"https://api6.ipify.org",
-		"http://ipv6.icanhazip.com",
-	}
-	client := &http.Client{Timeout: 3 * time.Second}
-	for _, ep := range endpoints {
-		resp, err := client.Get(ep)
-		if err == nil {
-			b, err := io.ReadAll(resp.Body)
-			resp.Body.Close()
-			if err == nil && len(b) > 0 {
-				ip := strings.TrimSpace(string(b))
-				if netIP := net.ParseIP(ip); netIP != nil && netIP.To4() == nil && netIP.To16() != nil {
-					return ip
-				}
-			}
-		}
-	}
-	return ""
 }

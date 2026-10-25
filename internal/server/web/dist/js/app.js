@@ -474,14 +474,37 @@
       row.querySelectorAll('.rq-history').forEach(container => {
         container.innerHTML = routeQualityHistoryChart(histories[container.dataset.carrier] || []);
       });
+      if (row.classList.contains('open')) positionRoutePopover(row);
     });
+  }
+
+  function positionRoutePopover(row) {
+    const popover = row.querySelector('.route-quality-popover');
+    if (!popover) return;
+    popover.style.left = '-2px';
+    popover.style.right = 'auto';
+    popover.style.top = 'calc(100% + 5px)';
+    popover.style.bottom = 'auto';
+    let rect = popover.getBoundingClientRect();
+    if (rect.right > window.innerWidth - 10) {
+      popover.style.left = 'auto';
+      popover.style.right = '-2px';
+      rect = popover.getBoundingClientRect();
+    }
+    if (rect.bottom > window.innerHeight - 10) {
+      popover.style.top = 'auto';
+      popover.style.bottom = 'calc(100% + 5px)';
+    }
   }
 
   function routeQualityRowHtml(node, enabled) {
     if (!enabled) return '';
     const rows = node.route_quality || [];
     const latest = rows.map(x => Date.parse(x.checked_at || '')).filter(Number.isFinite);
-    const checked = latest.length ? `更新 ${new Date(Math.max(...latest)).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })}` : '尚未检测';
+    const latestAt = latest.length ? Math.max(...latest) : 0;
+    const checkedTime = latestAt ? new Date(latestAt).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) : '';
+    const staleAfter = Math.max(60, Number(cachedData?.route_quality_interval_sec) || 1800) * 2.5 * 1000;
+    const checked = latestAt ? `${Date.now() - latestAt > staleAfter ? '数据滞后 · ' : ''}更新 ${checkedTime}` : '尚未检测';
     const history = routeQualityHistoryCache.get(node.id)?.data || {};
     return `<div class="detail-row detail-route-quality" data-route-node="${escapeHtml(node.id)}">
       <span class="label">国内线路</span>
@@ -517,7 +540,7 @@
       const open = row.classList.toggle('open');
       card.classList.toggle('route-popover-open', open);
       trigger.setAttribute('aria-expanded', String(open));
-      if (open) loadRouteQualityHistory(card.dataset.id);
+      if (open) { positionRoutePopover(row); loadRouteQualityHistory(card.dataset.id); }
       event.stopPropagation();
       return;
     }
@@ -527,7 +550,7 @@
   dom.nodeGrid.addEventListener('pointerover', event => {
     const trigger = event.target.closest('.route-quality-trigger');
     const row = trigger && trigger.closest('.detail-route-quality');
-    if (row && !row.contains(event.relatedTarget)) loadRouteQualityHistory(row.dataset.routeNode);
+    if (row && !row.contains(event.relatedTarget)) { positionRoutePopover(row); loadRouteQualityHistory(row.dataset.routeNode); }
   });
   dom.nodeGrid.addEventListener('focusin', event => {
     const trigger = event.target.closest('.route-quality-trigger');
