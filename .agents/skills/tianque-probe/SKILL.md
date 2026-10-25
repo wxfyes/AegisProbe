@@ -20,7 +20,7 @@ Read this before making code, deployment, or release changes. The repository is 
 
 The canonical release path is GitHub Actions, defined in `.github/workflows/release.yml`:
 
-1. Update `internal/common/types.go` version and `scripts/release_notes.md` as appropriate. Check that all release assets and manifest generation in `scripts/build_release.sh` match the intended version and platforms.
+1. **Do not bump the version or create a release for every small change.** Keep ordinary fixes and related UI improvements together; first finish the currently requested scope and any clearly related follow-ups, then prepare one consolidated release. Leave `internal/common/types.go` unchanged for documentation-only or unreleased commits. Bump it once when the user-facing release is actually ready, and update `scripts/release_notes.md` with the combined changes. A separate urgent security fix or an explicit user request can justify an earlier release.
 2. Commit and push the release-ready code, then create/push a new `vX.Y.Z` tag pointing at that commit. The workflow triggers on `v*` tags.
 3. GitHub Actions builds the binaries and `update-manifest.json`, installs the pinned Cosign version, and runs `cosign sign-blob --yes --bundle ...` with `id-token: write`. Sigstore uses GitHub's short-lived OIDC identity and transparency services; no developer creates, stores, or sends a signing private key.
 4. The same workflow uploads binaries, install scripts, `update-manifest.json`, and `update-manifest.sigstore.json` to the GitHub Release.
