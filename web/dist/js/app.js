@@ -397,11 +397,13 @@
       const history = histories[name] || [];
       const stats = routeQualityHistoryStats(history);
       const currentLatency = Number(item.latency_ms);
-      const currentLoss = Number(item.loss_pct);
+      const currentLoss = item.loss_pct == null ? NaN : Number(item.loss_pct);
       const hasCurrent = ['ok', 'loss'].includes(item.status);
       const carrierClass = name === '电信' ? 'telecom' : name === '移动' ? 'mobile' : 'unicom';
       const latencyText = hasCurrent ? (currentLatency > 0 ? `${currentLatency.toFixed(1)} ms` : '超时') : '--';
-      const lossText = hasCurrent && Number.isFinite(currentLoss) ? `${currentLoss.toFixed(1)}%` : '--';
+      // CarrierQuality omits zero-valued LossPct in JSON; status=ok plus a missing value means 0%.
+      const lossText = hasCurrent && (Number.isFinite(currentLoss) || item.status === 'ok')
+        ? `${(Number.isFinite(currentLoss) ? currentLoss : 0).toFixed(1)}%` : '--';
       const statusText = item.status === 'error' || item.status === 'unavailable'
         ? escapeHtml(item.message || '暂无可用探针')
         : item.status === 'pending' ? '等待下一轮检测' : (item.network ? escapeHtml(item.network) : '检测结果正常');
@@ -411,7 +413,7 @@
       const peakLoss = stats.count ? `${stats.maxLoss.toFixed(1)}%` : '--';
       return `<article class="rq-result rq-${carrierClass}-card">
         <div class="rq-result-head"><span class="rq-carrier"><i class="rq-dot rq-${carrierClass}"></i>${name}</span><span class="rq-result-note">${statusText}</span></div>
-        <div class="rq-current-grid"><div><span>当前延迟</span><strong>${latencyText}</strong></div><div><span>当前丢包</span><strong>${lossText}</strong></div></div>
+        <div class="rq-current-grid"><div><span>当前延迟</span><strong class="${currentLatency > 0 && hasCurrent ? latencyQualityClass(currentLatency) : ''}">${latencyText}</strong></div><div><span>当前丢包</span><strong>${lossText}</strong></div></div>
         <div class="rq-period-head"><strong>近 24 小时统计</strong><span>${stats.count} 次有效检测</span></div>
         <div class="rq-stats-grid">
           <div><span>平均延迟</span><strong>${avgLatency}</strong></div>
@@ -422,6 +424,12 @@
         <div class="rq-history" data-carrier="${name}">${routeQualityHistoryChart(history)}</div>
       </article>`;
     }).join('');
+  }
+
+  function latencyQualityClass(latency) {
+    if (latency <= 100) return 'rq-latency-good';
+    if (latency <= 200) return 'rq-latency-warn';
+    return 'rq-latency-poor';
   }
 
   function routeQualityHistoryStats(points) {
@@ -473,7 +481,11 @@
     const lossDomain = maxLoss <= 1 ? 1 : maxLoss <= 5 ? 5 : maxLoss <= 10 ? 10 : maxLoss <= 25 ? 25 : Math.min(100, Math.ceil(maxLoss / 25) * 25);
     const yLoss = loss => lossBottom - (Math.max(0, Math.min(lossDomain, loss)) / lossDomain) * (lossBottom - lossTop);
     const latencySamples = samples.filter(point => point.latency > 0);
-    const latencyPath = latencySamples.map((point, index) => `${index ? 'L' : 'M'}${x(point.at).toFixed(1)},${yLatency(point.latency).toFixed(1)}`).join(' ');
+    const latencySegments = latencySamples.slice(1).map((point, index) => {
+      const previous = latencySamples[index];
+      const quality = latencyQualityClass((previous.latency + point.latency) / 2);
+      return `<path class="rq-latency-segment ${quality}" d="M${x(previous.at).toFixed(1)},${yLatency(previous.latency).toFixed(1)} L${x(point.at).toFixed(1)},${yLatency(point.latency).toFixed(1)}"/>`;
+    }).join('');
     const lossPath = samples.map((point, index) => `${index ? 'L' : 'M'}${x(point.at).toFixed(1)},${yLoss(point.loss).toFixed(1)}`).join(' ');
     const lossArea = samples.length ? `${lossPath} L${x(samples[samples.length - 1].at).toFixed(1)},${lossBottom} L${x(samples[0].at).toFixed(1)},${lossBottom} Z` : '';
     const formatTime = at => new Date(at).toLocaleString([], { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
@@ -481,7 +493,8 @@
     const pointMarkup = (point, metric) => {
       const valueY = metric === 'latency' ? yLatency(point.latency) : yLoss(point.loss);
       const title = tooltip(point);
-      return `<g class="rq-chart-point-group"><circle class="rq-chart-point rq-chart-point-${metric}" cx="${x(point.at).toFixed(1)}" cy="${valueY.toFixed(1)}" r="8" tabindex="0" role="img" aria-label="${escapeHtml(title)}" data-tooltip="${escapeHtml(title)}"><title>${escapeHtml(title)}</title></circle><circle class="rq-chart-marker rq-chart-marker-${metric}" cx="${x(point.at).toFixed(1)}" cy="${valueY.toFixed(1)}" r="2.5" aria-hidden="true"/></g>`;
+      const quality = metric === 'latency' ? ` ${latencyQualityClass(point.latency)}` : '';
+      return `<g class="rq-chart-point-group"><circle class="rq-chart-point rq-chart-point-${metric}${quality}" cx="${x(point.at).toFixed(1)}" cy="${valueY.toFixed(1)}" r="8" tabindex="0" role="img" aria-label="${escapeHtml(title)}" data-tooltip="${escapeHtml(title)}"><title>${escapeHtml(title)}</title></circle><circle class="rq-chart-marker rq-chart-marker-${metric}${quality}" cx="${x(point.at).toFixed(1)}" cy="${valueY.toFixed(1)}" r="2.5" aria-hidden="true"/></g>`;
     };
     const latencyPoints = latencySamples.map(point => pointMarkup(point, 'latency')).join('');
     const lossPoints = samples.map(point => pointMarkup(point, 'loss')).join('');
@@ -498,11 +511,11 @@
       const ty = yLoss(value);
       return `<line class="rq-chart-grid" x1="${left}" y1="${ty.toFixed(1)}" x2="${right}" y2="${ty.toFixed(1)}"/><text class="rq-chart-ylabel" x="${left - 6}" y="${(ty + 3).toFixed(1)}" text-anchor="end">${value.toFixed(0)}%</text>`;
     }).join('');
-    return `<div class="rq-chart-legend"><span><i class="rq-legend-latency"></i>延迟（ms）</span><span><i class="rq-legend-loss"></i>丢包率（0–${lossDomain}%）</span><span class="rq-chart-hint">悬停或点击采样点查看数值</span></div>
+    return `<div class="rq-chart-legend"><span class="rq-latency-quality-legend"><i class="rq-latency-good"></i>≤100 ms <i class="rq-latency-warn"></i>100–200 ms <i class="rq-latency-poor"></i>&gt;200 ms</span><span><i class="rq-legend-loss"></i>丢包率（0–${lossDomain}%）</span><span class="rq-chart-hint">延迟按绿/黄/红分级；悬停或点击采样点查看数值</span></div>
       <svg class="rq-history-svg rq-history-svg-detailed" viewBox="0 0 360 212" role="img" aria-label="过去 24 小时延迟和丢包率趋势">
         ${xTicks}${latencyTicks}${lossTicks}
         <text class="rq-chart-section-label" x="${left}" y="15">往返延迟</text><text class="rq-chart-section-label" x="${left}" y="123">丢包率</text>
-        <path class="rq-latency-line" d="${latencyPath}"/><g class="rq-latency-dots">${latencyPoints}</g>
+        <g class="rq-latency-dots">${latencySegments}${latencyPoints}</g>
         <path class="rq-loss-area" d="${lossArea}"/><path class="rq-loss-line" d="${lossPath}"/><g class="rq-loss-dots">${lossPoints}</g>
       </svg>`;
   }
