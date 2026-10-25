@@ -122,15 +122,24 @@ func (h *RouterHandler) handleReport(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	clientIP = strings.TrimSpace(clientIP)
-	if payload.Metrics.PublicIP == "" {
-		payload.Metrics.PublicIP = clientIP
-	}
-	if strings.Contains(clientIP, ":") {
-		if payload.Metrics.IPv6 == "" {
-			payload.Metrics.IPv6 = clientIP
+	// The source address of this authenticated report is the most recent public
+	// address the server can actually reach. Prefer it over any cached Agent value
+	// so dynamic/NAT addresses do not remain stale after an address change.
+	if sourceIP := net.ParseIP(clientIP); sourceIP != nil {
+		if ipv4 := sourceIP.To4(); ipv4 != nil {
+			payload.Metrics.IPv4 = ipv4.String()
+			payload.Metrics.PublicIP = ipv4.String()
+		} else {
+			payload.Metrics.IPv6 = sourceIP.String()
+			payload.Metrics.PublicIP = sourceIP.String()
 		}
-	} else if strings.Contains(clientIP, ".") {
-		if payload.Metrics.IPv4 == "" {
+	} else {
+		if payload.Metrics.PublicIP == "" {
+			payload.Metrics.PublicIP = clientIP
+		}
+		if strings.Contains(clientIP, ":") && payload.Metrics.IPv6 == "" {
+			payload.Metrics.IPv6 = clientIP
+		} else if strings.Contains(clientIP, ".") && payload.Metrics.IPv4 == "" {
 			payload.Metrics.IPv4 = clientIP
 		}
 	}

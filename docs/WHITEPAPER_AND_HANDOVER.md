@@ -1,6 +1,6 @@
 # 🛡️ 天阙·神盾安全探针 (AegisProbe) 架构设计与研发推进白皮书
 
-> **文档版本**: `v1.2.1`
+> **文档版本**: `v1.2.2`
 > **更新时间**: 2026-10-24  
 > **维护项目**: 天阙安全实验室 (TianQue Security Lab)  
 > **开源仓库**: [https://github.com/wxfyes/AegisProbe](https://github.com/wxfyes/AegisProbe)  
