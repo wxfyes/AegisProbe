@@ -323,7 +323,7 @@
         if (agentVer === masterVer) {
           verHtml = `<span class="capsule" style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; background: rgba(16, 185, 129, 0.12); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3);" title="当前 Agent 为最新版本">${escapeHtml(agentVer)} ✓</span>`;
         } else {
-          verHtml = `<span class="capsule" style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; background: rgba(245, 158, 11, 0.12); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3);" title="当前 Agent 版本落后于主控 (${masterVer})，请在小鸡执行一键更新">${escapeHtml(agentVer)} 待更新</span>`;
+          verHtml = `<span class="capsule" style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; background: rgba(245, 158, 11, 0.12); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3);" title="当前 Agent 版本落后于主控 (${masterVer})，可在本行操作列点击升级 Agent">${escapeHtml(agentVer)} 待更新</span>`;
         }
       }
 
