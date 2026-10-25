@@ -394,16 +394,55 @@
     const ordered = ['电信', '移动', '联通'];
     return ordered.map(name => {
       const item = list.find(x => x.carrier === name) || { carrier:name, status:'pending' };
-      let values = '等待检测';
-      if (item.status === 'error' || item.status === 'unavailable') values = escapeHtml(item.message || '暂无可用探针');
-      else if (item.status === 'pending') values = '等待检测';
-      else {
-        const latency = Number(item.latency_ms);
-        const loss = Number(item.loss_pct) || 0;
-        values = `${latency > 0 ? `${latency.toFixed(1)} ms` : '超时'} <span class="rq-loss">丢包 ${loss.toFixed(1)}%</span>`;
-      }
-      return `<div class="rq-result"><span class="rq-carrier"><i class="rq-dot rq-${name === '电信' ? 'telecom' : name === '移动' ? 'mobile' : 'unicom'}"></i>${name}</span><span class="rq-values">${values}</span><span class="rq-network">${escapeHtml(item.network || '')}</span><div class="rq-history" data-carrier="${name}">${routeQualityHistoryChart(histories[name] || [])}</div></div>`;
+      const history = histories[name] || [];
+      const stats = routeQualityHistoryStats(history);
+      const currentLatency = Number(item.latency_ms);
+      const currentLoss = Number(item.loss_pct);
+      const hasCurrent = ['ok', 'loss'].includes(item.status);
+      const carrierClass = name === '电信' ? 'telecom' : name === '移动' ? 'mobile' : 'unicom';
+      const latencyText = hasCurrent ? (currentLatency > 0 ? `${currentLatency.toFixed(1)} ms` : '超时') : '--';
+      const lossText = hasCurrent && Number.isFinite(currentLoss) ? `${currentLoss.toFixed(1)}%` : '--';
+      const statusText = item.status === 'error' || item.status === 'unavailable'
+        ? escapeHtml(item.message || '暂无可用探针')
+        : item.status === 'pending' ? '等待下一轮检测' : (item.network ? escapeHtml(item.network) : '检测结果正常');
+      const avgLatency = stats.latencyCount ? `${stats.avgLatency.toFixed(1)} ms` : '--';
+      const latencyRange = stats.latencyCount ? `${stats.minLatency.toFixed(1)}–${stats.maxLatency.toFixed(1)} ms` : '--';
+      const avgLoss = stats.count ? `${stats.avgLoss.toFixed(1)}%` : '--';
+      const peakLoss = stats.count ? `${stats.maxLoss.toFixed(1)}%` : '--';
+      return `<article class="rq-result rq-${carrierClass}-card">
+        <div class="rq-result-head"><span class="rq-carrier"><i class="rq-dot rq-${carrierClass}"></i>${name}</span><span class="rq-result-note">${statusText}</span></div>
+        <div class="rq-current-grid"><div><span>当前延迟</span><strong>${latencyText}</strong></div><div><span>当前丢包</span><strong>${lossText}</strong></div></div>
+        <div class="rq-period-head"><strong>近 24 小时统计</strong><span>${stats.count} 次有效检测</span></div>
+        <div class="rq-stats-grid">
+          <div><span>平均延迟</span><strong>${avgLatency}</strong></div>
+          <div><span>延迟范围</span><strong>${latencyRange}</strong></div>
+          <div class="rq-stat-highlight"><span>平均丢包率</span><strong>${avgLoss}</strong></div>
+          <div><span>最高丢包率</span><strong>${peakLoss}</strong></div>
+        </div>
+        <div class="rq-history" data-carrier="${name}">${routeQualityHistoryChart(history)}</div>
+      </article>`;
     }).join('');
+  }
+
+  function routeQualityHistoryStats(points) {
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    const samples = (Array.isArray(points) ? points : []).map(point => ({
+      at: Date.parse(point.checked_at || ''),
+      latency: Number(point.latency_ms),
+      loss: point.loss_pct == null ? NaN : Number(point.loss_pct),
+      status: point.status
+    })).filter(point => Number.isFinite(point.at) && point.at >= cutoff && point.at <= Date.now() &&
+      ['ok', 'loss'].includes(point.status) && Number.isFinite(point.loss));
+    const latency = samples.map(point => point.latency).filter(value => Number.isFinite(value) && value > 0);
+    return {
+      count: samples.length,
+      latencyCount: latency.length,
+      avgLatency: latency.length ? latency.reduce((sum, value) => sum + value, 0) / latency.length : 0,
+      minLatency: latency.length ? Math.min(...latency) : 0,
+      maxLatency: latency.length ? Math.max(...latency) : 0,
+      avgLoss: samples.length ? samples.reduce((sum, point) => sum + point.loss, 0) / samples.length : 0,
+      maxLoss: samples.length ? Math.max(...samples.map(point => point.loss)) : 0
+    };
   }
 
   function routeQualityHistoryChart(points) {
@@ -411,13 +450,16 @@
     const samples = (Array.isArray(points) ? points : []).map(point => ({
       at: Date.parse(point.checked_at || ''),
       latency: Number(point.latency_ms),
-      loss: Number.isFinite(Number(point.loss_pct)) ? Number(point.loss_pct) : 0,
+      loss: point.loss_pct == null ? NaN : Number(point.loss_pct),
       status: point.status
-    })).filter(point => Number.isFinite(point.at) && point.at >= cutoff && point.at <= Date.now() && ['ok', 'loss'].includes(point.status));
+    })).filter(point => Number.isFinite(point.at) && point.at >= cutoff && point.at <= Date.now() &&
+      ['ok', 'loss'].includes(point.status) && Number.isFinite(point.loss));
     samples.sort((a, b) => a.at - b.at);
-    if (!samples.length) return '<div class="rq-history-empty">24 小时趋势：等待首轮检测</div>';
+    if (!samples.length) return '<div class="rq-history-empty"><strong>还没有 24 小时历史</strong><span>完成下一轮检测后，延迟曲线、丢包率和时间统计会显示在这里。</span></div>';
 
-    const left = 34, right = 263, top = 10, bottom = 48;
+    const left = 48, right = 348;
+    const latencyTop = 24, latencyBottom = 99;
+    const lossTop = 132, lossBottom = 174;
     const latencies = samples.map(point => point.latency).filter(value => value > 0);
     let min = latencies.length ? Math.min(...latencies) : 0;
     let max = latencies.length ? Math.max(...latencies) : 1;
@@ -426,23 +468,68 @@
     max += pad;
     if (max <= min) max = min + 1;
     const x = at => left + Math.max(0, Math.min(1, (at - cutoff) / (24 * 60 * 60 * 1000))) * (right - left);
-    const y = latency => bottom - ((latency - min) / (max - min)) * (bottom - top);
+    const yLatency = latency => latencyBottom - ((latency - min) / (max - min)) * (latencyBottom - latencyTop);
+    const maxLoss = Math.max(...samples.map(point => point.loss));
+    const lossDomain = maxLoss <= 1 ? 1 : maxLoss <= 5 ? 5 : maxLoss <= 10 ? 10 : maxLoss <= 25 ? 25 : Math.min(100, Math.ceil(maxLoss / 25) * 25);
+    const yLoss = loss => lossBottom - (Math.max(0, Math.min(lossDomain, loss)) / lossDomain) * (lossBottom - lossTop);
     const latencySamples = samples.filter(point => point.latency > 0);
-    const path = latencySamples.map((point, index) => `${index ? 'L' : 'M'}${x(point.at).toFixed(1)},${y(point.latency).toFixed(1)}`).join(' ');
-    const dots = latencySamples.map(point => `<circle cx="${x(point.at).toFixed(1)}" cy="${y(point.latency).toFixed(1)}" r="2.2"/>`).join('');
-    const lossBars = samples.map(point => {
-      const bx = x(point.at);
-      const height = Math.max(2, Math.min(10, point.loss / 10));
-      const color = point.loss > 0 ? '#ef4444' : '#10b981';
-      return `<rect x="${(bx - 1.5).toFixed(1)}" y="${(74 - height).toFixed(1)}" width="3" height="${height.toFixed(1)}" rx="1" fill="${color}"/>`;
+    const latencyPath = latencySamples.map((point, index) => `${index ? 'L' : 'M'}${x(point.at).toFixed(1)},${yLatency(point.latency).toFixed(1)}`).join(' ');
+    const lossPath = samples.map((point, index) => `${index ? 'L' : 'M'}${x(point.at).toFixed(1)},${yLoss(point.loss).toFixed(1)}`).join(' ');
+    const lossArea = samples.length ? `${lossPath} L${x(samples[samples.length - 1].at).toFixed(1)},${lossBottom} L${x(samples[0].at).toFixed(1)},${lossBottom} Z` : '';
+    const formatTime = at => new Date(at).toLocaleString([], { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+    const tooltip = point => `${formatTime(point.at)} · 延迟 ${point.latency > 0 ? `${point.latency.toFixed(1)} ms` : '超时'} · 丢包 ${point.loss.toFixed(1)}%`;
+    const pointMarkup = (point, metric) => {
+      const valueY = metric === 'latency' ? yLatency(point.latency) : yLoss(point.loss);
+      const title = tooltip(point);
+      return `<g class="rq-chart-point-group"><circle class="rq-chart-point rq-chart-point-${metric}" cx="${x(point.at).toFixed(1)}" cy="${valueY.toFixed(1)}" r="8" tabindex="0" role="img" aria-label="${escapeHtml(title)}" data-tooltip="${escapeHtml(title)}"><title>${escapeHtml(title)}</title></circle><circle class="rq-chart-marker rq-chart-marker-${metric}" cx="${x(point.at).toFixed(1)}" cy="${valueY.toFixed(1)}" r="2.5" aria-hidden="true"/></g>`;
+    };
+    const latencyPoints = latencySamples.map(point => pointMarkup(point, 'latency')).join('');
+    const lossPoints = samples.map(point => pointMarkup(point, 'loss')).join('');
+    const xTicks = [0, 6, 12, 18, 24].map(hour => {
+      const tx = left + (hour / 24) * (right - left);
+      const label = hour === 24 ? '现在' : `${hour}h`;
+      return `<line class="rq-chart-vgrid" x1="${tx}" y1="${latencyTop}" x2="${tx}" y2="${lossBottom}"/><text class="rq-chart-time" x="${tx}" y="204" text-anchor="${hour === 0 ? 'start' : hour === 24 ? 'end' : 'middle'}">${label}</text>`;
     }).join('');
-    const minLabel = latencies.length ? `${Math.min(...latencies).toFixed(1)} ms` : '超时';
-    const maxLabel = latencies.length ? `${Math.max(...latencies).toFixed(1)} ms` : '超时';
-    const latestLoss = samples[samples.length - 1].loss;
-    return `<div class="rq-history-caption"><span>近 24 小时 · ${samples.length} 次</span><span>延迟 ${minLabel} – ${maxLabel}</span></div><div class="rq-history-caption"><span>丢包率 0–100%</span><span>最新 ${latestLoss.toFixed(1)}%</span></div><svg class="rq-history-svg" viewBox="0 0 270 91" role="img" aria-label="近 24 小时延迟和丢包趋势">
-      <line x1="${left}" y1="${top}" x2="${right}" y2="${top}"/><line x1="${left}" y1="${(top + bottom) / 2}" x2="${right}" y2="${(top + bottom) / 2}"/><line x1="${left}" y1="${bottom}" x2="${right}" y2="${bottom}"/>
-      <text x="2" y="14">延迟</text><text x="2" y="72">丢包</text><path class="rq-latency-line" d="${path}"/><g class="rq-latency-dots">${dots}</g>${lossBars}
-      <text x="${left}" y="89">24 小时前</text><text x="${right}" y="89" text-anchor="end">现在</text></svg>`;
+    const latencyTicks = [max, (max + min) / 2, min].map(value => {
+      const ty = yLatency(value);
+      return `<line class="rq-chart-grid" x1="${left}" y1="${ty.toFixed(1)}" x2="${right}" y2="${ty.toFixed(1)}"/><text class="rq-chart-ylabel" x="${left - 6}" y="${(ty + 3).toFixed(1)}" text-anchor="end">${value.toFixed(0)}</text>`;
+    }).join('');
+    const lossTicks = [lossDomain, lossDomain / 2, 0].map(value => {
+      const ty = yLoss(value);
+      return `<line class="rq-chart-grid" x1="${left}" y1="${ty.toFixed(1)}" x2="${right}" y2="${ty.toFixed(1)}"/><text class="rq-chart-ylabel" x="${left - 6}" y="${(ty + 3).toFixed(1)}" text-anchor="end">${value.toFixed(0)}%</text>`;
+    }).join('');
+    return `<div class="rq-chart-legend"><span><i class="rq-legend-latency"></i>延迟（ms）</span><span><i class="rq-legend-loss"></i>丢包率（0–${lossDomain}%）</span><span class="rq-chart-hint">悬停或点击采样点查看数值</span></div>
+      <svg class="rq-history-svg rq-history-svg-detailed" viewBox="0 0 360 212" role="img" aria-label="过去 24 小时延迟和丢包率趋势">
+        ${xTicks}${latencyTicks}${lossTicks}
+        <text class="rq-chart-section-label" x="${left}" y="15">往返延迟</text><text class="rq-chart-section-label" x="${left}" y="123">丢包率</text>
+        <path class="rq-latency-line" d="${latencyPath}"/><g class="rq-latency-dots">${latencyPoints}</g>
+        <path class="rq-loss-area" d="${lossArea}"/><path class="rq-loss-line" d="${lossPath}"/><g class="rq-loss-dots">${lossPoints}</g>
+      </svg>`;
+  }
+
+  function showRouteQualityTooltip(point, clientX, clientY) {
+    if (!point) return;
+    let tooltip = document.getElementById('rqChartTooltip');
+    if (!tooltip) {
+      tooltip = document.createElement('div');
+      tooltip.id = 'rqChartTooltip';
+      tooltip.className = 'rq-chart-tooltip';
+      tooltip.setAttribute('role', 'status');
+      document.body.appendChild(tooltip);
+    }
+    tooltip.textContent = point.dataset.tooltip || point.getAttribute('aria-label') || '';
+    tooltip.hidden = false;
+    const margin = 12;
+    const rect = tooltip.getBoundingClientRect();
+    const left = Math.max(8, Math.min(window.innerWidth - rect.width - 8, clientX + margin));
+    const top = Math.max(8, Math.min(window.innerHeight - rect.height - 8, clientY + margin));
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+  }
+
+  function hideRouteQualityTooltip() {
+    const tooltip = document.getElementById('rqChartTooltip');
+    if (tooltip) tooltip.hidden = true;
   }
 
   async function loadRouteQualityHistory(nodeID) {
@@ -501,10 +588,37 @@
       modal = document.createElement('div');
       modal.id = 'routeQualityModal';
       modal.className = 'route-quality-modal';
-      modal.innerHTML = '<div class="rq-modal-backdrop" data-rq-close></div><section class="rq-modal-panel" role="dialog" aria-modal="true" aria-labelledby="rqModalTitle"><header class="rq-modal-header"><div><h2 id="rqModalTitle">国内三网 ICMP</h2><div class="rq-modal-subtitle"></div></div><button type="button" class="rq-modal-close" aria-label="关闭">×</button></header><div class="rq-modal-results"></div><footer class="rq-modal-foot">从中国电信、移动、联通网络 Ping 此节点公网 IP · 24 小时历史</footer></section>';
+      modal.innerHTML = '<div class="rq-modal-backdrop" data-rq-close></div><section class="rq-modal-panel" role="dialog" aria-modal="true" aria-labelledby="rqModalTitle"><header class="rq-modal-header"><div><h2 id="rqModalTitle">国内三网 ICMP</h2><div class="rq-modal-subtitle"></div></div><button type="button" class="rq-modal-close" aria-label="关闭">×</button></header><div class="rq-modal-results"></div><footer class="rq-modal-foot">近 24 小时均值按有效探测轮次计算 · 悬停或聚焦图表采样点查看该轮精确数值</footer></section>';
       document.body.appendChild(modal);
       modal.addEventListener('click', event => {
         if (event.target.closest('[data-rq-close], .rq-modal-close')) closeRouteQualityModal();
+        const point = event.target.closest('.rq-chart-point');
+        if (point) {
+          const rect = point.getBoundingClientRect();
+          showRouteQualityTooltip(point, rect.left + rect.width / 2, rect.top + rect.height / 2);
+          window.setTimeout(hideRouteQualityTooltip, 3500);
+        }
+      });
+      modal.addEventListener('pointerover', event => {
+        const point = event.target.closest('.rq-chart-point');
+        if (point) showRouteQualityTooltip(point, event.clientX, event.clientY);
+      });
+      modal.addEventListener('pointermove', event => {
+        const point = event.target.closest('.rq-chart-point');
+        if (point) showRouteQualityTooltip(point, event.clientX, event.clientY);
+      });
+      modal.addEventListener('pointerout', event => {
+        if (event.target.closest('.rq-chart-point') && !event.relatedTarget?.closest?.('.rq-chart-point')) hideRouteQualityTooltip();
+      });
+      modal.addEventListener('focusin', event => {
+        const point = event.target.closest('.rq-chart-point');
+        if (point) {
+          const rect = point.getBoundingClientRect();
+          showRouteQualityTooltip(point, rect.left + rect.width / 2, rect.top + rect.height / 2);
+        }
+      });
+      modal.addEventListener('focusout', event => {
+        if (event.target.closest('.rq-chart-point')) hideRouteQualityTooltip();
       });
     }
     modal.querySelector('.rq-modal-subtitle').textContent = `${node.name} · ${updated}`;
@@ -517,6 +631,7 @@
   function closeRouteQualityModal() {
     const modal = document.getElementById('routeQualityModal');
     if (modal) modal.classList.remove('open');
+    hideRouteQualityTooltip();
     activeRouteQualityNode = '';
   }
 
