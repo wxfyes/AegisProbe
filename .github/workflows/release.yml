@@ -1,0 +1,43 @@
+name: GitHub Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build release assets and manifest
+        run: bash scripts/build_release.sh
+
+      - name: Install Cosign
+        run: go install github.com/sigstore/cosign/v2/cmd/cosign@v2.5.3
+
+      - name: Sign update manifest with GitHub OIDC identity
+        env:
+          COSIGN_EXPERIMENTAL: '1'
+        run: cosign sign-blob --yes --bundle release_bins/update-manifest.sigstore.json release_bins/update-manifest.json
+
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --title "AegisProbe $GITHUB_REF_NAME" --generate-notes
+          fi
+          gh release upload "$GITHUB_REF_NAME" release_bins/aegis_server_linux_amd64 release_bins/aegis_server_windows_amd64.exe release_bins/downloads/* release_bins/aegis-ping/* release_bins/install.sh release_bins/update-manifest.json release_bins/update-manifest.sigstore.json --clobber
