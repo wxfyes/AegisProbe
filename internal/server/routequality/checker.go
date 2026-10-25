@@ -131,9 +131,8 @@ type measurementRequest struct {
 		Limit int    `json:"limit"`
 	} `json:"locations"`
 	MeasurementOptions struct {
-		Protocol  string `json:"protocol"`
-		Packets   int    `json:"packets"`
-		IPVersion int    `json:"ipVersion,omitempty"`
+		Protocol string `json:"protocol"`
+		Packets  int    `json:"packets"`
 	} `json:"measurementOptions"`
 }
 type measurementResponse struct {
@@ -166,13 +165,6 @@ func (c *Checker) globalping(ctx context.Context, cfg common.RouteQualityConfig,
 	}{carrier.magic, cfg.ProbeCount})
 	reqBody.MeasurementOptions.Protocol = "ICMP"
 	reqBody.MeasurementOptions.Packets = cfg.Packets
-	if ip := net.ParseIP(target); ip != nil {
-		if ip.To4() != nil {
-			reqBody.MeasurementOptions.IPVersion = 4
-		} else {
-			reqBody.MeasurementOptions.IPVersion = 6
-		}
-	}
 	body, _ := json.Marshal(reqBody)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/v1/measurements", bytes.NewReader(body))
 	if err != nil {

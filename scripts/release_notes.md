@@ -1,3 +1,10 @@
+## 🛡️ 天阙·神盾安全探针 (AegisProbe) v1.2.4
+
+### 🐛 v1.2.4 修复
+- **修复三网 ICMP 请求被 Globalping HTTP 400 拒绝**：目标为 Agent 公网 IP 时不再发送仅适用于域名目标的 `ipVersion` 参数。
+
+---
+
 ## 🛡️ 天阙·神盾安全探针 (AegisProbe) v1.2.3
 
 ### ✨ v1.2.3 更新特性
