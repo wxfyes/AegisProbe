@@ -138,7 +138,7 @@
     renderGroups(data.groups || ['所有']);
 
     // 节点卡片列表
-    renderNodes(data.nodes || []);
+    renderNodes(data.nodes || [], !!data.route_quality_enabled);
   }
 
   function renderGroups(groups) {
@@ -159,7 +159,7 @@
         dom.groupFilterBar.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         if (cachedData) {
-          renderNodes(cachedData.nodes || []);
+          renderNodes(cachedData.nodes || [], !!cachedData.route_quality_enabled);
         }
       });
       dom.groupFilterBar.appendChild(btn);
@@ -167,7 +167,7 @@
   }
 
   // 6. 渲染节点卡片 (原地精确更新 DOM，彻底杜绝全量重排，零 GPU 负担)
-  function renderNodes(nodes) {
+  function renderNodes(nodes, routeQualityEnabled) {
     const filtered = nodes.filter(n => currentGroup === '所有' || n.group === currentGroup);
     const existingCards = new Map();
     dom.nodeGrid.querySelectorAll('.node-card').forEach(card => {
@@ -262,6 +262,7 @@
               <span class="label">网络</span>
               <span class="speed-text"><span class="speed-reading-up">↑ <span class="val-speed-up">${node.status.speed_up_str}</span></span><span class="speed-reading-down">↓ <span class="val-speed-down">${node.status.speed_down_str}</span></span></span>
             </div>
+            ${routeQualityRowHtml(node, routeQualityEnabled)}
             <div class="detail-row detail-connections" title="TCP 为已建立连接数；UDP 为绑定套接字数">
               <span class="label">连接数</span>
               <span class="connection-counts"><span>TCP <b class="val-tcp-connections">${node.status.tcp_connections || 0}</b></span><span>UDP <b class="val-udp-sockets">${node.status.udp_sockets || 0}</b></span></span>
@@ -361,6 +362,7 @@
 		if (tcpConnections) tcpConnections.textContent = node.status.tcp_connections || 0;
 		const udpSockets = card.querySelector('.val-udp-sockets');
 		if (udpSockets) udpSockets.textContent = node.status.udp_sockets || 0;
+        syncRouteQuality(card, node, routeQualityEnabled);
 
         const trafficUp = card.querySelector('.val-traffic-up');
         if (trafficUp) trafficUp.textContent = node.status.traffic_up_str;
@@ -375,6 +377,86 @@
         const valUptime = card.querySelector('.val-uptime');
         if (valUptime) valUptime.textContent = node.status.uptime_str;
       }
+    });
+  }
+
+  function routeQualitySummary(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    const ready = list.filter(x => x.status && x.status !== 'pending' && x.status !== 'error' && x.status !== 'unavailable').length;
+    return ready ? `三网 ${ready}/3` : '三网检测';
+  }
+
+  function routeQualityDetails(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    const ordered = ['电信', '移动', '联通'];
+    return ordered.map(name => {
+      const item = list.find(x => x.carrier === name) || { carrier:name, status:'pending' };
+      let values = '等待检测';
+      if (item.status === 'error' || item.status === 'unavailable') values = escapeHtml(item.message || '暂无可用探针');
+      else if (item.status === 'pending') values = '等待检测';
+      else {
+        const latency = Number(item.latency_ms);
+        const loss = Number(item.loss_pct) || 0;
+        values = `${latency > 0 ? `${latency.toFixed(1)} ms` : '超时'} <span class="rq-loss">丢包 ${loss.toFixed(1)}%</span>`;
+      }
+      return `<div class="rq-result"><span class="rq-carrier"><i class="rq-dot rq-${name === '电信' ? 'telecom' : name === '移动' ? 'mobile' : 'unicom'}"></i>${name}</span><span class="rq-values">${values}</span><span class="rq-network">${escapeHtml(item.network || '')}</span></div>`;
+    }).join('');
+  }
+
+  function routeQualityRowHtml(node, enabled) {
+    if (!enabled) return '';
+    const rows = node.route_quality || [];
+    const latest = rows.map(x => Date.parse(x.checked_at || '')).filter(Number.isFinite);
+    const checked = latest.length ? `更新 ${new Date(Math.max(...latest)).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })}` : '尚未检测';
+    return `<div class="detail-row detail-route-quality" data-route-node="${escapeHtml(node.id)}">
+      <span class="label">国内线路</span>
+      <button type="button" class="route-quality-trigger" aria-expanded="false" title="查看国内三网 ICMP 延迟与丢包">${routeQualitySummary(rows)} <span aria-hidden="true">⌄</span></button>
+      <div class="route-quality-popover" role="dialog" aria-label="国内三网 ICMP 延迟与丢包">
+        <div class="rq-popover-title"><b>国内三网 ICMP</b><span>${checked}</span></div>
+        ${routeQualityDetails(rows)}
+        <div class="rq-popover-foot">从中国运营商网络 Ping 此节点公网 IP</div>
+      </div>
+    </div>`;
+  }
+
+  function syncRouteQuality(card, node, enabled) {
+    const existing = card.querySelector('.detail-route-quality');
+    if (!enabled) { if (existing) existing.remove(); card.classList.remove('route-popover-open'); return; }
+    const html = routeQualityRowHtml(node, true);
+    if (!existing) {
+      const network = card.querySelector('.detail-network');
+      if (network) network.insertAdjacentHTML('afterend', html);
+      return;
+    }
+    const open = existing.classList.contains('open');
+    existing.outerHTML = html;
+    const updated = card.querySelector('.detail-route-quality');
+    if (updated && open) { updated.classList.add('open'); card.classList.add('route-popover-open'); updated.querySelector('.route-quality-trigger').setAttribute('aria-expanded', 'true'); }
+  }
+
+  dom.nodeGrid.addEventListener('click', (event) => {
+    const trigger = event.target.closest('.route-quality-trigger');
+    if (trigger) {
+      const row = trigger.closest('.detail-route-quality');
+      const card = trigger.closest('.node-card');
+      const open = row.classList.toggle('open');
+      card.classList.toggle('route-popover-open', open);
+      trigger.setAttribute('aria-expanded', String(open));
+      event.stopPropagation();
+      return;
+    }
+    if (!event.target.closest('.route-quality-popover')) closeRoutePopovers();
+  });
+
+  document.addEventListener('click', (event) => {
+    if (!event.target.closest('.detail-route-quality')) closeRoutePopovers();
+  });
+  document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeRoutePopovers(); });
+  function closeRoutePopovers() {
+    dom.nodeGrid.querySelectorAll('.detail-route-quality.open').forEach(row => {
+      row.classList.remove('open');
+      row.querySelector('.route-quality-trigger')?.setAttribute('aria-expanded', 'false');
+      row.closest('.node-card')?.classList.remove('route-popover-open');
     });
   }
 

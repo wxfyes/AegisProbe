@@ -764,6 +764,49 @@ body {
 .detail-connections .connection-counts span:last-child { color: #0f766e; }
 .detail-connections .connection-counts b { color: var(--text-main); font-weight: 800; }
 
+.detail-route-quality { position: relative; min-height: 22px; }
+.route-quality-trigger {
+  border: 0;
+  border-radius: 999px;
+  padding: 2px 9px;
+  background: rgba(14,165,233,.10);
+  color: #0369a1;
+  font: 700 11px var(--font-mono);
+  cursor: pointer;
+}
+.route-quality-trigger:hover, .route-quality-trigger:focus-visible { background: rgba(14,165,233,.2); outline: 2px solid rgba(14,165,233,.25); }
+[data-theme="dark"] .route-quality-trigger { color: #7dd3fc; background: rgba(14,165,233,.16); }
+.route-quality-popover {
+  display: none;
+  position: absolute;
+  z-index: 40;
+  left: -2px;
+  top: calc(100% + 5px);
+  width: min(290px, calc(100vw - 40px));
+  padding: 12px;
+  border: 1px solid rgba(14,165,233,.3);
+  border-radius: 11px;
+  background: var(--card-bg);
+  color: var(--text-main);
+  box-shadow: 0 12px 32px rgba(15,23,42,.22);
+  font: 12px var(--font-sans);
+}
+.detail-route-quality:hover .route-quality-popover,
+.detail-route-quality:focus-within .route-quality-popover,
+.detail-route-quality.open .route-quality-popover { display: block; }
+.route-popover-open { z-index: 20; }
+.rq-popover-title { display:flex; justify-content:space-between; align-items:center; padding-bottom:8px; margin-bottom:4px; border-bottom:1px solid var(--card-border); }
+.rq-popover-title b { font-size:13px; }
+.rq-popover-title span, .rq-network, .rq-popover-foot { color:var(--text-sub); font-size:10px; }
+.rq-result { display:grid; grid-template-columns:48px 1fr; align-items:center; gap:3px 8px; padding:7px 2px; border-bottom:1px solid var(--card-border); }
+.rq-carrier { display:inline-flex; align-items:center; gap:6px; font-weight:800; }
+.rq-dot { width:8px; height:8px; border-radius:50%; display:inline-block; }
+.rq-telecom { background:#ef4444; }.rq-unicom { background:#3b82f6; }.rq-mobile { background:#10b981; }
+.rq-values { display:flex; justify-content:space-between; align-items:center; font:700 12px var(--font-mono); color:var(--text-main); white-space:nowrap; }
+.rq-loss { color:#64748b; font-size:10px; font-weight:600; }
+.rq-network { grid-column:2; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rq-popover-foot { padding-top:8px; }
+
 .detail-row {
   display: flex;
   justify-content: space-between;

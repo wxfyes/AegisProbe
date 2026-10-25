@@ -17,6 +17,7 @@ import (
 	"tianque_probe/internal/server/gfw"
 	"tianque_probe/internal/server/handler"
 	"tianque_probe/internal/server/notify"
+	"tianque_probe/internal/server/routequality"
 	"tianque_probe/internal/server/store"
 	"tianque_probe/internal/server/web"
 )
@@ -69,6 +70,8 @@ func main() {
 	// 启动国内连通性 (是否被墙) 异步测活巡检引擎
 	gfwChecker := gfw.NewChecker(cfgMgr, st)
 	gfwChecker.Start(ctx)
+	routeQualityChecker := routequality.NewChecker(cfgMgr, st)
+	routeQualityChecker.Start(ctx)
 
 	// 启动后台心跳扫描协程 (每 10 秒巡检一次)
 	go func() {
@@ -117,6 +120,7 @@ func main() {
 	mux := http.NewServeMux()
 	routerHandler := handler.NewRouterHandler(cfgMgr, st, authMgr, notifier)
 	routerHandler.SetGFWChecker(gfwChecker)
+	routerHandler.SetRouteQualityChecker(routeQualityChecker)
 	routerHandler.RegisterRoutes(mux)
 
 	// 挂载嵌入式单页面前端资源 (彻底根除 404 问题)

@@ -245,6 +245,12 @@
       gap: 16px;
     }
 
+    .route-quality-settings .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
     .code-box {
       background: #0f172a;
       border: 1px solid var(--panel-border);
@@ -303,6 +309,10 @@
       .grid-2 {
         grid-template-columns: 1fr;
         gap: 10px;
+      }
+      .route-quality-settings .grid-3 {
+        grid-template-columns: 1fr;
+        gap: 8px;
       }
       .modal-box {
         width: 95%;
@@ -489,6 +499,84 @@
                 <input type="number" id="cfgGFWCheckInterval" class="form-input" value="14400" min="60" step="60" placeholder="单位：秒">
               </div>
             </div>
+
+            <hr style="border: 0; border-top: 1px solid var(--panel-border); margin: 22px 0;">
+            <section class="route-quality-settings">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px;">
+                <div style="font-size:15px;font-weight:800;color:var(--text-main);">📶 国内三网 ICMP 延迟与丢包</div>
+                <label style="display:inline-flex;align-items:center;gap:8px;font-weight:700;cursor:pointer;">
+                  <input id="cfgRouteEnabled" type="checkbox" style="width:18px;height:18px;accent-color:#0ea5e9;">
+                  启用周期检测
+                </label>
+              </div>
+              <div style="font-size:12px;color:var(--text-sub);line-height:1.7;margin-bottom:14px;">
+                主控从中国电信、联通、移动网络中的公开探针，对每台在线 Agent 的公网 IP 发送 ICMP Ping。结果只缓存并显示最近一轮，不影响 Agent 登录和上报。Globalping 测量目标与结果可能被测量服务公开访问，请勿用于隐私 IP。
+              </div>
+              <div class="grid-2">
+                <div class="form-group">
+                  <label class="form-label">测量接口提供方</label>
+                  <select id="cfgRouteProvider" class="form-select">
+                    <option value="globalping">Globalping 公共接口（推荐）</option>
+                    <option value="custom">自定义 JSON 接口</option>
+                  </select>
+                </div>
+                <div class="form-group" id="routeApiBaseGroup">
+                  <label class="form-label">Globalping API 地址</label>
+                  <input id="cfgRouteAPIBaseURL" class="form-input" value="https://api.globalping.io" placeholder="https://api.globalping.io">
+                </div>
+              </div>
+              <div class="form-group" id="routeTokenGroup">
+                <label class="form-label">API Token（选填，Globalping 登录令牌可提高额度）</label>
+                <input id="cfgRouteAPIToken" type="password" class="form-input" autocomplete="new-password" placeholder="留空保持当前 Token；填写新值以替换">
+                <div id="routeTokenHint" style="font-size:11px;color:var(--text-sub);margin-top:4px;"></div>
+                <label style="display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--text-sub);margin-top:6px;"><input id="cfgRouteClearToken" type="checkbox"> 清除已保存的 Token，恢复匿名额度</label>
+              </div>
+              <div id="routeGlobalSettings">
+                <div class="form-group">
+                  <label class="form-label">三网探针筛选条件（Globalping Magic / ASN）</label>
+                  <div class="grid-3">
+                    <input id="cfgRouteTelecom" class="form-input" placeholder="电信：AS4134+China">
+                    <input id="cfgRouteUnicom" class="form-input" placeholder="联通：AS4837+China">
+                    <input id="cfgRouteMobile" class="form-input" placeholder="移动：AS9808+China">
+                  </div>
+                  <div style="font-size:11px;color:var(--text-sub);margin-top:5px;">筛选可填运营商名称、ASN 或组合条件；例如 AS4134+China。公开探针是否在线由服务方决定。</div>
+                </div>
+              </div>
+              <div id="routeCustomSettings" style="display:none;">
+                <div class="form-group">
+                  <label class="form-label">自定义 JSON API URL 模板（GET）</label>
+                  <input id="cfgRouteCustomURL" class="form-input" placeholder="https://example.com/ping?target={ip}&carrier={carrier}&count={probe_count}&timeout={timeout}&packets={packets}">
+                  <div style="font-size:11px;color:var(--text-sub);line-height:1.6;margin-top:5px;">占位符：{ip}、{carrier}（telecom/unicom/mobile）、{filter}、{probe_count}、{timeout}、{packets}。接口需返回 JSON：<code>{"latency_ms": 163.2, "loss_percent": 0}</code>；可选 <code>network</code> 字符串。自定义接口同样要求 HTTPS。</div>
+                </div>
+              </div>
+              <div class="grid-2">
+                <div class="form-group">
+                  <label class="form-label">检测间隔</label>
+                  <select id="cfgRouteIntervalSelect" class="form-select">
+                    <option value="900">15 分钟</option><option value="1800">30 分钟（推荐）</option><option value="3600">1 小时</option><option value="21600">6 小时</option><option value="86400">24 小时</option><option value="custom">自定义秒数</option>
+                  </select>
+                  <input id="cfgRouteInterval" type="number" class="form-input" min="60" max="86400" step="60" style="display:none;margin-top:8px;" placeholder="60–86400 秒">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">每家运营商选取探针数</label>
+                  <input id="cfgRouteProbeCount" type="number" class="form-input" min="1" max="50" value="1">
+                  <div style="font-size:11px;color:var(--text-sub);margin-top:4px;">多探针结果取平均延迟和丢包率；实际在线数量可能少于请求值。</div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">单次测量最长等待（秒）</label>
+                  <input id="cfgRouteTimeout" type="number" class="form-input" min="3" max="60" value="10">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">每个探针发送 ICMP 包数</label>
+                  <input id="cfgRoutePackets" type="number" class="form-input" min="1" max="20" value="5">
+                </div>
+              </div>
+              <div id="routeUsageEstimate" style="border-radius:8px;padding:11px 13px;background:rgba(14,165,233,.08);border:1px solid rgba(14,165,233,.2);font-size:12px;line-height:1.7;margin:4px 0 12px;"></div>
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;">
+                <button type="button" id="btnTriggerRouteQuality" class="btn-sm" style="padding:9px 14px;background:#0284c7;color:#fff;border-color:#0284c7;">⚡ 立即检测一轮</button>
+                <span id="routeQualityRunStatus" style="font-size:12px;color:var(--text-sub);"></span>
+              </div>
+            </section>
 
             <div style="display: flex; gap: 12px; margin-top: 20px; flex-wrap: wrap;">
               <button type="submit" class="btn-primary" style="width: auto; padding: 10px 24px;">保存系统配置</button>

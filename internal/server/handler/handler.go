@@ -14,15 +14,17 @@ import (
 	"tianque_probe/internal/server/config"
 	"tianque_probe/internal/server/gfw"
 	"tianque_probe/internal/server/notify"
+	"tianque_probe/internal/server/routequality"
 	"tianque_probe/internal/server/store"
 )
 
 type RouterHandler struct {
-	cfgMgr     *config.Manager
-	store      *store.Store
-	authMgr    *auth.AuthManager
-	notifier   *notify.Notifier
-	gfwChecker *gfw.Checker
+	cfgMgr       *config.Manager
+	store        *store.Store
+	authMgr      *auth.AuthManager
+	notifier     *notify.Notifier
+	gfwChecker   *gfw.Checker
+	routeChecker *routequality.Checker
 }
 
 func NewRouterHandler(cfgMgr *config.Manager, st *store.Store, authMgr *auth.AuthManager, notif *notify.Notifier) *RouterHandler {
@@ -36,6 +38,10 @@ func NewRouterHandler(cfgMgr *config.Manager, st *store.Store, authMgr *auth.Aut
 
 func (h *RouterHandler) SetGFWChecker(checker *gfw.Checker) {
 	h.gfwChecker = checker
+}
+
+func (h *RouterHandler) SetRouteQualityChecker(checker *routequality.Checker) {
+	h.routeChecker = checker
 }
 
 func (h *RouterHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -58,6 +64,8 @@ func (h *RouterHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/admin/agent_install_cmd", h.adminRequireAuth(h.handleAdminInstallCmd))
 	mux.HandleFunc("/api/admin/test_tg", h.adminRequireAuth(h.handleAdminTestTG))
 	mux.HandleFunc("/api/admin/gfw/trigger", h.adminRequireAuth(h.handleAdminGFWTrigger))
+	mux.HandleFunc("/api/admin/route-quality/trigger", h.adminRequireAuth(h.handleAdminRouteQualityTrigger))
+	mux.HandleFunc("/api/admin/route-quality/status", h.adminRequireAuth(h.handleAdminRouteQualityStatus))
 	mux.HandleFunc("/api/admin/backup/export", h.adminRequireAuth(h.handleAdminBackupExport))
 	mux.HandleFunc("/api/admin/backup/import", h.adminRequireAuth(h.handleAdminBackupImport))
 
@@ -169,6 +177,7 @@ func (h *RouterHandler) handleNodesSummary(w http.ResponseWriter, r *http.Reques
 	}
 
 	summary := h.store.GetSummary(cfg.SiteTitle, cfg.Nodes, cfg.OfflineSec)
+	summary.RouteQualityEnabled = cfg.RouteQuality.Enabled
 	writeJSON(w, http.StatusOK, summary)
 }
 
@@ -293,6 +302,10 @@ func (h *RouterHandler) handleAdminConfig(w http.ResponseWriter, r *http.Request
 			})
 		}
 
+		routeQuality := cfg.RouteQuality
+		if routeQuality.APIToken != "" {
+			routeQuality.APIToken = "******"
+		}
 		resp := map[string]interface{}{
 			"master_version":     common.Version,
 			"site_title":         cfg.SiteTitle,
@@ -306,6 +319,7 @@ func (h *RouterHandler) handleAdminConfig(w http.ResponseWriter, r *http.Request
 			"tg_proxy":           cfg.TGProxy,
 			"gfw_check_url":      cfg.GFWCheckURL,
 			"gfw_check_interval": cfg.GFWCheckInterval,
+			"route_quality":      routeQuality,
 			"admin_password":     "******",
 			"nodes":              adminNodes,
 		}
@@ -315,17 +329,19 @@ func (h *RouterHandler) handleAdminConfig(w http.ResponseWriter, r *http.Request
 
 	if r.Method == http.MethodPost {
 		var req struct {
-			SiteTitle        string `json:"site_title"`
-			AdminPassword    string `json:"admin_password"`
-			AccessMode       string `json:"access_mode"`
-			ListenPort       int    `json:"listen_port"`
-			OfflineSec       int    `json:"offline_sec"`
-			TGEnabled        bool   `json:"tg_enabled"`
-			TGBotToken       string `json:"tg_bot_token"`
-			TGChatID         string `json:"tg_chat_id"`
-			TGProxy          string `json:"tg_proxy"`
-			GFWCheckURL      string `json:"gfw_check_url"`
-			GFWCheckInterval int    `json:"gfw_check_interval"`
+			SiteTitle        string                    `json:"site_title"`
+			AdminPassword    string                    `json:"admin_password"`
+			AccessMode       string                    `json:"access_mode"`
+			ListenPort       int                       `json:"listen_port"`
+			OfflineSec       int                       `json:"offline_sec"`
+			TGEnabled        bool                      `json:"tg_enabled"`
+			TGBotToken       string                    `json:"tg_bot_token"`
+			TGChatID         string                    `json:"tg_chat_id"`
+			TGProxy          string                    `json:"tg_proxy"`
+			GFWCheckURL      string                    `json:"gfw_check_url"`
+			GFWCheckInterval int                       `json:"gfw_check_interval"`
+			RouteQuality     common.RouteQualityConfig `json:"route_quality"`
+			ClearRouteToken  bool                      `json:"route_quality_clear_token"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "Invalid body", http.StatusBadRequest)
@@ -337,11 +353,17 @@ func (h *RouterHandler) handleAdminConfig(w http.ResponseWriter, r *http.Request
 		if pwd == "******" || pwd == "" {
 			pwd = ""
 		}
+		if req.ClearRouteToken {
+			req.RouteQuality.APIToken = ""
+		} else if strings.TrimSpace(req.RouteQuality.APIToken) == "" || req.RouteQuality.APIToken == "******" {
+			req.RouteQuality.APIToken = h.cfgMgr.GetConfig().RouteQuality.APIToken
+		}
 
 		if err := h.cfgMgr.UpdateSettings(
 			req.SiteTitle, pwd, req.AccessMode, req.ListenPort, req.OfflineSec,
 			req.TGEnabled, req.TGBotToken, req.TGChatID, req.TGProxy,
 			req.GFWCheckURL, req.GFWCheckInterval,
+			req.RouteQuality,
 		); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
@@ -354,12 +376,43 @@ func (h *RouterHandler) handleAdminConfig(w http.ResponseWriter, r *http.Request
 		if h.gfwChecker != nil && req.GFWCheckURL != "" {
 			h.gfwChecker.TriggerCheckNow()
 		}
+		if h.routeChecker != nil && req.RouteQuality.Enabled {
+			h.routeChecker.Trigger()
+		}
 
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 		return
 	}
 
 	http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+}
+
+func (h *RouterHandler) handleAdminRouteQualityTrigger(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if h.routeChecker == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "三网检测服务尚未启动"})
+		return
+	}
+	if !h.cfgMgr.GetConfig().RouteQuality.Enabled {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请先启用三网质量检测并保存配置"})
+		return
+	}
+	if !h.routeChecker.Trigger() {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "当前检测轮次仍在运行"})
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]bool{"ok": true})
+}
+
+func (h *RouterHandler) handleAdminRouteQualityStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"running": h.routeChecker != nil && h.routeChecker.IsRunning()})
 }
 
 // handleAdminNodeSave 保存节点 (新增/编辑)

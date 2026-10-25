@@ -29,16 +29,40 @@ type EventListener interface {
 }
 
 type Store struct {
-	mu        sync.RWMutex
-	states    map[string]*NodeState
-	listeners []EventListener
+	mu           sync.RWMutex
+	states       map[string]*NodeState
+	routeQuality map[string]map[string]common.CarrierQuality
+	listeners    []EventListener
 }
 
 func NewStore() *Store {
 	return &Store{
-		states:    make(map[string]*NodeState),
-		listeners: make([]EventListener, 0),
+		states:       make(map[string]*NodeState),
+		routeQuality: make(map[string]map[string]common.CarrierQuality),
+		listeners:    make([]EventListener, 0),
 	}
+}
+
+// UpdateRouteQuality stores one cached carrier measurement without touching agent heartbeat state.
+func (s *Store) UpdateRouteQuality(nodeID string, quality common.CarrierQuality) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.routeQuality[nodeID] == nil {
+		s.routeQuality[nodeID] = make(map[string]common.CarrierQuality)
+	}
+	s.routeQuality[nodeID][quality.Carrier] = quality
+}
+
+func (s *Store) GetRouteQuality(nodeID string) []common.CarrierQuality {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	results := make([]common.CarrierQuality, 0, 3)
+	for _, carrier := range []string{"电信", "联通", "移动"} {
+		if quality, ok := s.routeQuality[nodeID][carrier]; ok {
+			results = append(results, quality)
+		}
+	}
+	return results
 }
 
 func (s *Store) AddListener(l EventListener) {
@@ -330,6 +354,7 @@ func (s *Store) GetSummary(siteTitle string, nodes []common.NodeConfig, offlineS
 				}
 				return ""
 			}(),
+			RouteQuality: s.getRouteQualityLocked(n.ID),
 		}
 
 		cardViews = append(cardViews, card)
@@ -361,6 +386,16 @@ func (s *Store) GetSummary(siteTitle string, nodes []common.NodeConfig, offlineS
 		Groups: groups,
 		Nodes:  cardViews,
 	}
+}
+
+func (s *Store) getRouteQualityLocked(nodeID string) []common.CarrierQuality {
+	results := make([]common.CarrierQuality, 0, 3)
+	for _, carrier := range []string{"电信", "联通", "移动"} {
+		if quality, ok := s.routeQuality[nodeID][carrier]; ok {
+			results = append(results, quality)
+		}
+	}
+	return results
 }
 
 func calcDaysLeft(dateStr string) int {

@@ -3,7 +3,7 @@ package common
 import "strings"
 
 // Version 定义天阙·神盾安全探针全局统一版本号
-const Version = "v1.2.2"
+const Version = "v1.2.3"
 
 // MetricsData 定义受控端 Agent 采集到的原始指标
 type MetricsData struct {
@@ -96,19 +96,48 @@ func InferRenewalPeriod(price string) string {
 
 // ServerConfig 服务端全局配置模型
 type ServerConfig struct {
-	ListenPort       int          `json:"listen_port"`        // 监听端口，默认 8989
-	AdminPassword    string       `json:"admin_password"`     // 管理员密码
-	AccessMode       string       `json:"access_mode"`        // 大屏访问模式: "public" (公开) 或 "private" (密码锁屏)
-	SiteTitle        string       `json:"site_title"`         // 大屏站点标题
-	TGEnabled        bool         `json:"tg_enabled"`         // 是否启用 Telegram 通知
-	TGBotToken       string       `json:"tg_bot_token"`       // Telegram Bot Token
-	TGChatID         string       `json:"tg_chat_id"`         // Telegram 目标 Chat ID
-	TGProxy          string       `json:"tg_proxy"`           // Telegram Socks5 / HTTP 代理 (如 socks5://127.0.0.1:10808)
-	OfflineSec       int          `json:"offline_sec"`        // 判定掉线超时阈值 (秒)，默认 60
-	WarnDays         []int        `json:"warn_days"`          // 到期提醒阶梯天数，默认 [7, 3, 1, 0]
-	GFWCheckURL      string       `json:"gfw_check_url"`      // 外部测活 API URL 模板 (支持 {ip} 和 {port} 占位符)
-	GFWCheckInterval int          `json:"gfw_check_interval"` // 测活轮询间隔 (秒)，默认 180
-	Nodes            []NodeConfig `json:"nodes"`              // 节点列表
+	ListenPort       int                `json:"listen_port"`        // 监听端口，默认 8989
+	AdminPassword    string             `json:"admin_password"`     // 管理员密码
+	AccessMode       string             `json:"access_mode"`        // 大屏访问模式: "public" (公开) 或 "private" (密码锁屏)
+	SiteTitle        string             `json:"site_title"`         // 大屏站点标题
+	TGEnabled        bool               `json:"tg_enabled"`         // 是否启用 Telegram 通知
+	TGBotToken       string             `json:"tg_bot_token"`       // Telegram Bot Token
+	TGChatID         string             `json:"tg_chat_id"`         // Telegram 目标 Chat ID
+	TGProxy          string             `json:"tg_proxy"`           // Telegram Socks5 / HTTP 代理 (如 socks5://127.0.0.1:10808)
+	OfflineSec       int                `json:"offline_sec"`        // 判定掉线超时阈值 (秒)，默认 60
+	WarnDays         []int              `json:"warn_days"`          // 到期提醒阶梯天数，默认 [7, 3, 1, 0]
+	GFWCheckURL      string             `json:"gfw_check_url"`      // 外部测活 API URL 模板 (支持 {ip} 和 {port} 占位符)
+	GFWCheckInterval int                `json:"gfw_check_interval"` // 测活轮询间隔 (秒)，默认 180
+	RouteQuality     RouteQualityConfig `json:"route_quality"`
+	Nodes            []NodeConfig       `json:"nodes"` // 节点列表
+}
+
+// RouteQualityConfig configures ICMP measurements from mainland China carrier probes.
+type RouteQualityConfig struct {
+	Enabled      bool   `json:"enabled"`
+	Provider     string `json:"provider"` // globalping or custom
+	APIBaseURL   string `json:"api_base_url"`
+	APIToken     string `json:"api_token,omitempty"`
+	IntervalSec  int    `json:"interval_sec"`
+	ProbeCount   int    `json:"probe_count"`
+	TimeoutSec   int    `json:"timeout_sec"`
+	Packets      int    `json:"packets"`
+	TelecomMagic string `json:"telecom_magic"`
+	UnicomMagic  string `json:"unicom_magic"`
+	MobileMagic  string `json:"mobile_magic"`
+	CustomURL    string `json:"custom_url"`
+}
+
+// CarrierQuality is the cached ICMP result rendered on a node card.
+type CarrierQuality struct {
+	Carrier    string  `json:"carrier"`
+	Status     string  `json:"status"` // pending, ok, loss, unavailable, error
+	LatencyMS  float64 `json:"latency_ms,omitempty"`
+	LossPct    float64 `json:"loss_pct,omitempty"`
+	ProbeCount int     `json:"probe_count,omitempty"`
+	Network    string  `json:"network,omitempty"`
+	CheckedAt  string  `json:"checked_at,omitempty"`
+	Message    string  `json:"message,omitempty"`
 }
 
 // OverviewSummary 大屏看板顶部的全盘聚合数据模型
@@ -158,24 +187,26 @@ type NodeStatusView struct {
 
 // NodeCardView 大屏单节点卡片视图模型 (物理级剔除 IP、MAC、私网地址)
 type NodeCardView struct {
-	ID        string           `json:"id"`
-	Name      string           `json:"name"`
-	Region    string           `json:"region"`
-	Flag      string           `json:"flag"`
-	OS        string           `json:"os"`
-	Group     string           `json:"group"`
-	Billing   NodeBillingView  `json:"billing"`
-	Hardware  NodeHardwareView `json:"hardware"`
-	Status    NodeStatusView   `json:"status"`
-	GFWStatus string           `json:"gfw_status,omitempty"` // 国内连通性: "ok" (畅通), "blocked" (被墙), "" (未知/未开启)
+	ID           string           `json:"id"`
+	Name         string           `json:"name"`
+	Region       string           `json:"region"`
+	Flag         string           `json:"flag"`
+	OS           string           `json:"os"`
+	Group        string           `json:"group"`
+	Billing      NodeBillingView  `json:"billing"`
+	Hardware     NodeHardwareView `json:"hardware"`
+	Status       NodeStatusView   `json:"status"`
+	GFWStatus    string           `json:"gfw_status,omitempty"` // 国内连通性: "ok" (畅通), "blocked" (被墙), "" (未知/未开启)
+	RouteQuality []CarrierQuality `json:"route_quality,omitempty"`
 }
 
 // SummaryResponse 大屏前端聚合查询返回体
 type SummaryResponse struct {
-	SiteTitle string          `json:"site_title"`
-	Summary   OverviewSummary `json:"summary"`
-	Groups    []string        `json:"groups"` // 所有存在的分组标签列表 (排重并置前 "所有")
-	Nodes     []NodeCardView  `json:"nodes"`
+	SiteTitle           string          `json:"site_title"`
+	RouteQualityEnabled bool            `json:"route_quality_enabled"`
+	Summary             OverviewSummary `json:"summary"`
+	Groups              []string        `json:"groups"` // 所有存在的分组标签列表 (排重并置前 "所有")
+	Nodes               []NodeCardView  `json:"nodes"`
 }
 
 // CountryCodeToFlag 将两位国家代码 (如 HK, TW, US, JP, SG) 转换为对应 Unicode 国旗 Emoji

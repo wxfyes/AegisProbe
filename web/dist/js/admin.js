@@ -47,6 +47,23 @@
     cfgGFWCustomIntervalGroup: document.getElementById('cfgGFWCustomIntervalGroup'),
     btnTriggerGFW: document.getElementById('btnTriggerGFW'),
     btnFillDefaultGFW: document.getElementById('btnFillDefaultGFW'),
+    cfgRouteEnabled: document.getElementById('cfgRouteEnabled'),
+    cfgRouteProvider: document.getElementById('cfgRouteProvider'),
+    cfgRouteAPIBaseURL: document.getElementById('cfgRouteAPIBaseURL'),
+    cfgRouteAPIToken: document.getElementById('cfgRouteAPIToken'),
+    cfgRouteClearToken: document.getElementById('cfgRouteClearToken'),
+    cfgRouteTelecom: document.getElementById('cfgRouteTelecom'),
+    cfgRouteUnicom: document.getElementById('cfgRouteUnicom'),
+    cfgRouteMobile: document.getElementById('cfgRouteMobile'),
+    cfgRouteCustomURL: document.getElementById('cfgRouteCustomURL'),
+    cfgRouteIntervalSelect: document.getElementById('cfgRouteIntervalSelect'),
+    cfgRouteInterval: document.getElementById('cfgRouteInterval'),
+    cfgRouteProbeCount: document.getElementById('cfgRouteProbeCount'),
+    cfgRouteTimeout: document.getElementById('cfgRouteTimeout'),
+    cfgRoutePackets: document.getElementById('cfgRoutePackets'),
+    routeQualityUsage: document.getElementById('routeUsageEstimate'),
+    routeQualityRunStatus: document.getElementById('routeQualityRunStatus'),
+    btnTriggerRouteQuality: document.getElementById('btnTriggerRouteQuality'),
 
     nodeId: document.getElementById('nodeId'),
     nodeName: document.getElementById('nodeName'),
@@ -192,6 +209,33 @@
       }
     }
     updateGFWBadge(gfwURL, intervalSec);
+
+    const rq = cfg.route_quality || {};
+    if (dom.cfgRouteEnabled) dom.cfgRouteEnabled.checked = !!rq.enabled;
+    if (dom.cfgRouteProvider) dom.cfgRouteProvider.value = rq.provider || 'globalping';
+    if (dom.cfgRouteAPIBaseURL) dom.cfgRouteAPIBaseURL.value = rq.api_base_url || 'https://api.globalping.io';
+    if (dom.cfgRouteAPIToken) dom.cfgRouteAPIToken.value = '';
+    const tokenHint = document.getElementById('routeTokenHint');
+    if (tokenHint) tokenHint.textContent = rq.api_token ? '已保存 Token（出于安全不会回显；留空保持不变）' : '当前未配置 Token，将使用接口匿名额度。';
+    if (dom.cfgRouteClearToken) dom.cfgRouteClearToken.checked = false;
+    if (dom.cfgRouteTelecom) dom.cfgRouteTelecom.value = rq.telecom_magic || 'AS4134+China';
+    if (dom.cfgRouteUnicom) dom.cfgRouteUnicom.value = rq.unicom_magic || 'AS4837+China';
+    if (dom.cfgRouteMobile) dom.cfgRouteMobile.value = rq.mobile_magic || 'AS9808+China';
+    if (dom.cfgRouteCustomURL) dom.cfgRouteCustomURL.value = rq.custom_url || '';
+    const routeInterval = rq.interval_sec || 1800;
+    const routePresets = ['900', '1800', '3600', '21600', '86400'];
+    if (dom.cfgRouteIntervalSelect) {
+      dom.cfgRouteIntervalSelect.value = routePresets.includes(String(routeInterval)) ? String(routeInterval) : 'custom';
+      if (dom.cfgRouteInterval) {
+        dom.cfgRouteInterval.value = routeInterval;
+        dom.cfgRouteInterval.style.display = dom.cfgRouteIntervalSelect.value === 'custom' ? 'block' : 'none';
+      }
+    }
+    if (dom.cfgRouteProbeCount) dom.cfgRouteProbeCount.value = rq.probe_count || 1;
+    if (dom.cfgRouteTimeout) dom.cfgRouteTimeout.value = rq.timeout_sec || 10;
+    if (dom.cfgRoutePackets) dom.cfgRoutePackets.value = rq.packets || 5;
+    toggleRouteProvider();
+    updateRouteUsageEstimate();
 
     if (cfg.master_version) {
       const vText = cfg.master_version;
@@ -388,6 +432,23 @@
       }
     }
 
+    const routeInterval = dom.cfgRouteIntervalSelect && dom.cfgRouteIntervalSelect.value !== 'custom'
+      ? parseInt(dom.cfgRouteIntervalSelect.value, 10)
+      : parseInt(dom.cfgRouteInterval.value, 10);
+    const routeQuality = {
+      enabled: !!dom.cfgRouteEnabled.checked,
+      provider: dom.cfgRouteProvider.value,
+      api_base_url: dom.cfgRouteAPIBaseURL.value.trim(),
+      api_token: dom.cfgRouteAPIToken.value.trim(),
+      interval_sec: routeInterval,
+      probe_count: parseInt(dom.cfgRouteProbeCount.value, 10),
+      timeout_sec: parseInt(dom.cfgRouteTimeout.value, 10),
+      packets: parseInt(dom.cfgRoutePackets.value, 10),
+      telecom_magic: dom.cfgRouteTelecom.value.trim(),
+      unicom_magic: dom.cfgRouteUnicom.value.trim(),
+      mobile_magic: dom.cfgRouteMobile.value.trim(),
+      custom_url: dom.cfgRouteCustomURL.value.trim()
+    };
     const payload = {
       site_title: dom.cfgSiteTitle.value.trim(),
       access_mode: dom.cfgAccessMode.value,
@@ -398,7 +459,9 @@
       tg_chat_id: dom.cfgTGChatID.value.trim(),
       tg_proxy: dom.cfgTGProxy.value.trim(),
       gfw_check_url: dom.cfgGFWCheckURL ? dom.cfgGFWCheckURL.value.trim() : '',
-      gfw_check_interval: gfwInterval
+      gfw_check_interval: gfwInterval,
+      route_quality: routeQuality,
+      route_quality_clear_token: dom.cfgRouteClearToken.checked
     };
 
     try {
@@ -416,6 +479,78 @@
       }
     } catch (err) {
       alert('❌ 网络通信异常');
+    }
+  });
+
+  function toggleRouteProvider() {
+    const isCustom = dom.cfgRouteProvider && dom.cfgRouteProvider.value === 'custom';
+    const custom = document.getElementById('routeCustomSettings');
+    const global = document.getElementById('routeGlobalSettings');
+    const base = document.getElementById('routeApiBaseGroup');
+    const token = document.getElementById('routeTokenGroup');
+    if (custom) custom.style.display = isCustom ? 'block' : 'none';
+    if (global) global.style.display = isCustom ? 'none' : 'block';
+    if (base) base.style.display = isCustom ? 'none' : 'block';
+    if (token) token.style.display = 'block';
+    const tokenLabel = token && token.querySelector('.form-label');
+    if (tokenLabel) tokenLabel.textContent = isCustom ? '自定义接口 Bearer Token（选填）' : 'API Token（选填，Globalping 登录令牌可提高额度）';
+  }
+
+  function updateRouteUsageEstimate() {
+    if (!dom.routeQualityUsage) return;
+    const count = Math.max(0, (allNodes || []).length);
+    const probes = Math.max(1, parseInt(dom.cfgRouteProbeCount.value, 10) || 1);
+    const seconds = dom.cfgRouteIntervalSelect.value === 'custom'
+      ? (parseInt(dom.cfgRouteInterval.value, 10) || 1800)
+      : (parseInt(dom.cfgRouteIntervalSelect.value, 10) || 1800);
+    const hourly = Math.ceil(count * 3 * probes * 3600 / Math.max(seconds, 1));
+    const authenticated = !!(currentConfig && currentConfig.route_quality && currentConfig.route_quality.api_token);
+    const tokenNew = (dom.cfgRouteAPIToken.value || '').trim().length > 0;
+    const cap = (authenticated || tokenNew) ? 500 : 250;
+    const color = hourly > cap ? '#dc2626' : hourly >= cap * 0.8 ? '#d97706' : '#047857';
+    const rounded = seconds % 60 === 0 ? `${seconds / 60} 分钟` : `${seconds} 秒`;
+    dom.routeQualityUsage.innerHTML = `📊 当前 ${count} 台节点 × 3 家运营商 × ${probes} 个探针 ÷ 每 ${rounded} 一轮 ≈ <b style="color:${color}">${hourly} 次/小时</b>。额度参考：${authenticated || tokenNew ? '已认证 500' : '匿名 250'} 次/小时。${hourly > cap ? '<br><b style="color:#dc2626">超过参考额度，保存时会被拒绝；请减少探针数或延长间隔。</b>' : hourly >= cap * .8 ? '<br><b style="color:#b45309">已接近参考额度；匿名额度还会与同一出口 IP 的其他用户共享。</b>' : '<br>用量在参考额度内。接口每轮逐个调度，实际结果受中国运营商在线探针数量影响。'}`;
+  }
+
+  [dom.cfgRouteProbeCount, dom.cfgRouteInterval, dom.cfgRouteAPIToken].forEach(el => el && el.addEventListener('input', updateRouteUsageEstimate));
+  if (dom.cfgRouteIntervalSelect) dom.cfgRouteIntervalSelect.addEventListener('change', () => {
+    const custom = dom.cfgRouteIntervalSelect.value === 'custom';
+    dom.cfgRouteInterval.style.display = custom ? 'block' : 'none';
+    if (!custom) dom.cfgRouteInterval.value = dom.cfgRouteIntervalSelect.value;
+    updateRouteUsageEstimate();
+  });
+  if (dom.cfgRouteProvider) dom.cfgRouteProvider.addEventListener('change', toggleRouteProvider);
+  if (dom.cfgRouteClearToken) dom.cfgRouteClearToken.addEventListener('change', () => { if (dom.cfgRouteClearToken.checked) dom.cfgRouteAPIToken.value = ''; updateRouteUsageEstimate(); });
+
+  let routeQualityStatusTimer = null;
+  if (dom.btnTriggerRouteQuality) dom.btnTriggerRouteQuality.addEventListener('click', async () => {
+    const old = dom.btnTriggerRouteQuality.textContent;
+    dom.btnTriggerRouteQuality.disabled = true;
+    dom.btnTriggerRouteQuality.textContent = '⏳ 正在排队检测…';
+    try {
+      const res = await fetch('/api/admin/route-quality/trigger', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '检测请求失败');
+      dom.routeQualityRunStatus.textContent = '已开始检测；结果会在本轮完成后显示，检测期间仍展示上一轮缓存。';
+      if (routeQualityStatusTimer) clearInterval(routeQualityStatusTimer);
+      routeQualityStatusTimer = setInterval(async () => {
+        try {
+          const statusRes = await fetch('/api/admin/route-quality/status');
+          const status = await statusRes.json();
+          if (statusRes.ok && !status.running) {
+            clearInterval(routeQualityStatusTimer);
+            routeQualityStatusTimer = null;
+            dom.routeQualityRunStatus.textContent = '本轮检测已完成；大屏卡片将在下一次刷新时显示最新结果。';
+          }
+        } catch (_) { /* keep polling while the run status is temporarily unavailable */ }
+      }, 2500);
+      showToast('三网 ICMP 检测已开始', 'success');
+    } catch (err) {
+      dom.routeQualityRunStatus.textContent = err.message;
+      showToast(err.message, 'error');
+    } finally {
+      dom.btnTriggerRouteQuality.disabled = false;
+      dom.btnTriggerRouteQuality.textContent = old;
     }
   });
 

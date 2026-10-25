@@ -67,6 +67,11 @@ func (m *Manager) loadOrInit() error {
 		TGProxy:       "",
 		OfflineSec:    60,
 		WarnDays:      []int{7, 3, 1, 0},
+		RouteQuality: common.RouteQualityConfig{
+			Enabled: true, Provider: "globalping", APIBaseURL: "https://api.globalping.io",
+			IntervalSec: 1800, ProbeCount: 1, TimeoutSec: 10, Packets: 5,
+			TelecomMagic: "AS4134+China", UnicomMagic: "AS4837+China", MobileMagic: "AS9808+China",
+		},
 		Nodes: []common.NodeConfig{
 			{
 				ID:         "node_01",
@@ -129,6 +134,41 @@ func (m *Manager) ensureDefaults() {
 	if m.cfg.GFWCheckInterval <= 0 {
 		m.cfg.GFWCheckInterval = 180
 	}
+	if m.cfg.RouteQuality.Provider == "" {
+		// Enable the feature for existing installations when upgrading; the admin can disable it.
+		m.cfg.RouteQuality = common.RouteQualityConfig{
+			Enabled: true, Provider: "globalping", APIBaseURL: "https://api.globalping.io",
+			IntervalSec: 1800, ProbeCount: 1, TimeoutSec: 10, Packets: 5,
+			TelecomMagic: "AS4134+China", UnicomMagic: "AS4837+China", MobileMagic: "AS9808+China",
+		}
+	}
+	if m.cfg.RouteQuality.APIBaseURL == "" {
+		m.cfg.RouteQuality.APIBaseURL = "https://api.globalping.io"
+	}
+	if m.cfg.RouteQuality.IntervalSec < 60 {
+		m.cfg.RouteQuality.IntervalSec = 1800
+	}
+	if m.cfg.RouteQuality.ProbeCount < 1 || m.cfg.RouteQuality.ProbeCount > 50 {
+		m.cfg.RouteQuality.ProbeCount = 1
+	}
+	if m.cfg.RouteQuality.TimeoutSec < 3 || m.cfg.RouteQuality.TimeoutSec > 60 {
+		m.cfg.RouteQuality.TimeoutSec = 10
+	}
+	if m.cfg.RouteQuality.Packets < 1 || m.cfg.RouteQuality.Packets > 20 {
+		m.cfg.RouteQuality.Packets = 5
+	}
+	if m.cfg.RouteQuality.TelecomMagic == "" {
+		m.cfg.RouteQuality.TelecomMagic = "AS4134+China"
+	}
+	if m.cfg.RouteQuality.UnicomMagic == "" {
+		m.cfg.RouteQuality.UnicomMagic = "AS4837+China"
+	}
+	if m.cfg.RouteQuality.MobileMagic == "" {
+		m.cfg.RouteQuality.MobileMagic = "AS9808+China"
+	}
+	if m.cfg.RouteQuality.Provider != "custom" {
+		m.cfg.RouteQuality.Provider = "globalping"
+	}
 }
 
 func (m *Manager) saveLocked() error {
@@ -151,9 +191,49 @@ func (m *Manager) GetConfig() common.ServerConfig {
 	return m.cfg
 }
 
-func (m *Manager) UpdateSettings(title, password, accessMode string, port, offlineSec int, tgEnabled bool, tgToken, tgChatID, tgProxy string, gfwURL string, gfwInterval int) error {
+func (m *Manager) UpdateSettings(title, password, accessMode string, port, offlineSec int, tgEnabled bool, tgToken, tgChatID, tgProxy string, gfwURL string, gfwInterval int, route common.RouteQualityConfig) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if route.Provider != "globalping" && route.Provider != "custom" {
+		return fmt.Errorf("三网质量接口类型无效")
+	}
+	if route.IntervalSec < 60 || route.IntervalSec > 86400 {
+		return fmt.Errorf("三网检测间隔必须在 60 至 86400 秒之间")
+	}
+	if route.ProbeCount < 1 || route.ProbeCount > 50 {
+		return fmt.Errorf("每家运营商探针数量必须在 1 至 50 之间")
+	}
+	if route.TimeoutSec < 3 || route.TimeoutSec > 60 {
+		return fmt.Errorf("三网检测超时必须在 3 至 60 秒之间")
+	}
+	if route.Packets < 1 || route.Packets > 20 {
+		return fmt.Errorf("每次 ICMP 包数必须在 1 至 20 之间")
+	}
+	if route.Provider == "globalping" {
+		base := strings.TrimRight(strings.TrimSpace(route.APIBaseURL), "/")
+		if base == "" {
+			base = "https://api.globalping.io"
+		}
+		if !strings.HasPrefix(base, "https://") {
+			return fmt.Errorf("Globalping 接口地址必须使用 HTTPS")
+		}
+		route.APIBaseURL = base
+		if route.TelecomMagic == "" || route.UnicomMagic == "" || route.MobileMagic == "" {
+			return fmt.Errorf("三家运营商的 Globalping 探针筛选条件都必须填写")
+		}
+	} else if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(route.CustomURL)), "https://") {
+		return fmt.Errorf("自定义检测接口必须使用 HTTPS")
+	}
+	if route.APIToken == "******" {
+		route.APIToken = m.cfg.RouteQuality.APIToken
+	}
+	if route.Provider == "globalping" && route.APIToken == "" {
+		requestsPerHour := len(m.cfg.Nodes) * 3 * route.ProbeCount * 3600
+		estimated := (requestsPerHour + route.IntervalSec - 1) / route.IntervalSec
+		if estimated > 250 {
+			return fmt.Errorf("匿名 Globalping 预计每小时 %d 次，超过 250 次额度；请降低探针数或放宽检测间隔", estimated)
+		}
+	}
 
 	if title != "" {
 		m.cfg.SiteTitle = title
@@ -180,6 +260,7 @@ func (m *Manager) UpdateSettings(title, password, accessMode string, port, offli
 	} else if m.cfg.GFWCheckInterval <= 0 {
 		m.cfg.GFWCheckInterval = 14400 // 默认 4 小时 (14400 秒)
 	}
+	m.cfg.RouteQuality = route
 
 	return m.saveLocked()
 }
