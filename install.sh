@@ -62,6 +62,84 @@ detect_init_sys() {
     fi
 }
 
+json_escape() {
+    local value="$1"
+    value=${value//\\/\\\\}
+    value=${value//\"/\\\"}
+    value=${value//$'\n'/}
+    value=${value//$'\r'/}
+    printf '%s' "$value"
+}
+
+install_agent_updater() {
+    local server_url="$1" node_id="$2" node_token="$3"
+    local helper_name="aegis_agent_updater_linux_${GOARCH}"
+    local helper_path="${INSTALL_DIR}/agent/aegis_agent_updater"
+    local helper_tmp="${helper_path}.new"
+    local config_path="${INSTALL_DIR}/agent/update.json"
+
+    if [ "$INIT_SYS" != "systemd" ] && [ "$INIT_SYS" != "openrc" ]; then
+        echo -e "${YELLOW}ℹ️ 当前为 ${INIT_SYS}，自动升级助手仅支持 systemd/OpenRC。${PLAIN}"
+        return 0
+    fi
+
+    download_file "$helper_name" "$helper_tmp"
+    if [ "$INIT_SYS" = "systemd" ]; then
+        systemctl stop aegis-agent-updater 2>/dev/null || true
+    else
+        rc-service aegis-agent-updater stop 2>/dev/null || true
+    fi
+    mv -f "$helper_tmp" "$helper_path"
+    chmod 755 "$helper_path"
+    printf '{"server_url":"%s","node_id":"%s","token":"%s","agent_path":"%s","updater_path":"%s","service_manager":"%s"}\n' \
+        "$(json_escape "$server_url")" "$(json_escape "$node_id")" "$(json_escape "$node_token")" \
+        "${INSTALL_DIR}/agent/aegis_agent" "${INSTALL_DIR}/agent/aegis_agent_updater" "$INIT_SYS" > "$config_path"
+    chmod 600 "$config_path"
+
+    if [ "$INIT_SYS" = "systemd" ]; then
+        cat <<EOF > "${SYSTEMD_DIR}/aegis-agent-updater.service"
+[Unit]
+Description=TianQue Aegis Probe Agent Update Helper
+After=network-online.target aegis-agent.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=${helper_path} -config=${config_path}
+Restart=always
+RestartSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=${INSTALL_DIR}/agent
+
+[Install]
+WantedBy=multi-user.target
+EOF
+        systemctl daemon-reload
+        systemctl enable aegis-agent-updater
+        systemctl restart aegis-agent-updater
+    else
+        cat <<EOF > /etc/init.d/aegis-agent-updater
+#!/sbin/openrc-run
+description="TianQue Aegis Probe Agent Update Helper"
+command="${helper_path}"
+command_args="-config=${config_path}"
+command_background="yes"
+pidfile="/run/aegis-agent-updater.pid"
+
+depend() {
+    need net
+    after aegis-agent firewall
+}
+EOF
+        chmod +x /etc/init.d/aegis-agent-updater
+        rc-update add aegis-agent-updater default 2>/dev/null || true
+        rc-service aegis-agent-updater restart || /etc/init.d/aegis-agent-updater restart
+    fi
+}
+
 # 强制释放端口 —— 获取精准 PID 后直接 kill -9，并验证端口已释放
 force_free_port() {
     local port="$1"
@@ -522,6 +600,8 @@ EOF
         nohup ${agent_dir}/aegis_agent -server="${server_url}" -id="${node_id}" -token="${node_token}" >/dev/null 2>&1 &
     fi
 
+    install_agent_updater "$server_url" "$node_id" "$node_token"
+
     echo -e "${GREEN}=================================================================${PLAIN}"
     echo -e "${GREEN}✅ 天阙·神盾受控探针已启动！内存占用 < 5MB，CPU < 0.1%${PLAIN}"
     echo -e "${GREEN}🛡️ 数据正在单向汇报至: ${server_url}${PLAIN}"
@@ -592,11 +672,16 @@ uninstall_agent() {
 
     # 停止服务并清理自启
     if [ "$INIT_SYS" = "systemd" ]; then
+        systemctl disable --now aegis-agent-updater 2>/dev/null || true
+        rm -f "${SYSTEMD_DIR}/aegis-agent-updater.service"
         systemctl stop aegis-agent 2>/dev/null || true
         systemctl disable aegis-agent 2>/dev/null || true
         rm -f "${SYSTEMD_DIR}/aegis-agent.service"
         systemctl daemon-reload
     elif [ "$INIT_SYS" = "openrc" ]; then
+        rc-service aegis-agent-updater stop 2>/dev/null || true
+        rc-update del aegis-agent-updater default 2>/dev/null || true
+        rm -f /etc/init.d/aegis-agent-updater
         rc-service aegis-agent stop 2>/dev/null || true
         rc-update del aegis-agent default 2>/dev/null || true
         rm -f /etc/init.d/aegis-agent

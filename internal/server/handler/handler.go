@@ -47,6 +47,8 @@ func (h *RouterHandler) SetRouteQualityChecker(checker *routequality.Checker) {
 func (h *RouterHandler) RegisterRoutes(mux *http.ServeMux) {
 	// Agent 单向上报接口
 	mux.HandleFunc("/api/report", h.handleReport)
+	mux.HandleFunc("/api/agent/update/check", h.handleAgentUpdateCheck)
+	mux.HandleFunc("/api/agent/update/status", h.handleAgentUpdateStatus)
 
 	// 大屏脱敏数据接口 (双模访问保护)
 	mux.HandleFunc("/api/nodes/summary", h.handleNodesSummary)
@@ -63,6 +65,7 @@ func (h *RouterHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/admin/node/delete", h.adminRequireAuth(h.handleAdminNodeDelete))
 	mux.HandleFunc("/api/admin/node/reorder", h.adminRequireAuth(h.handleAdminNodeReorder))
 	mux.HandleFunc("/api/admin/agent_install_cmd", h.adminRequireAuth(h.handleAdminInstallCmd))
+	mux.HandleFunc("/api/admin/agent/update", h.adminRequireAuth(h.handleAdminAgentUpdate))
 	mux.HandleFunc("/api/admin/test_tg", h.adminRequireAuth(h.handleAdminTestTG))
 	mux.HandleFunc("/api/admin/gfw/trigger", h.adminRequireAuth(h.handleAdminGFWTrigger))
 	mux.HandleFunc("/api/admin/route-quality/trigger", h.adminRequireAuth(h.handleAdminRouteQualityTrigger))
@@ -300,12 +303,13 @@ func (h *RouterHandler) handleAdminConfig(w http.ResponseWriter, r *http.Request
 
 		type AdminNodeView struct {
 			common.NodeConfig
-			RealIP   string `json:"real_ip"`
-			IPv4     string `json:"ipv4"`
-			IPv6     string `json:"ipv6"`
-			RealOS   string `json:"real_os"`
-			Version  string `json:"version"`
-			IsOnline bool   `json:"is_online"`
+			RealIP   string                  `json:"real_ip"`
+			IPv4     string                  `json:"ipv4"`
+			IPv6     string                  `json:"ipv6"`
+			RealOS   string                  `json:"real_os"`
+			Version  string                  `json:"version"`
+			IsOnline bool                    `json:"is_online"`
+			Update   common.AgentUpdateState `json:"update"`
 		}
 
 		adminNodes := make([]AdminNodeView, 0, len(cfg.Nodes))
@@ -328,6 +332,7 @@ func (h *RouterHandler) handleAdminConfig(w http.ResponseWriter, r *http.Request
 				RealOS:     osName,
 				Version:    ver,
 				IsOnline:   isOnline,
+				Update:     h.cfgMgr.AgentUpdateState(n.ID),
 			})
 		}
 
@@ -542,6 +547,92 @@ func (h *RouterHandler) handleAdminInstallCmd(w http.ResponseWriter, r *http.Req
 	})
 }
 
+func (h *RouterHandler) handleAdminAgentUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		NodeID string `json:"node_id"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req); err != nil {
+		http.Error(w, "Invalid body", http.StatusBadRequest)
+		return
+	}
+	if _, ok := h.cfgMgr.GetNode(req.NodeID); !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "节点不存在"})
+		return
+	}
+	_, _, realOS, _, _ := h.store.GetNodeRealInfo(req.NodeID)
+	if strings.Contains(strings.ToLower(realOS), "openwrt") {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "自动更新助手暂不支持 OpenWrt/procd"})
+		return
+	}
+	if _, pending := h.cfgMgr.PendingAgentUpdate(req.NodeID); pending {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "该节点已有更新请求正在处理"})
+		return
+	}
+	if err := h.cfgMgr.RequestAgentUpdate(req.NodeID, common.Version); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]interface{}{"ok": true, "version": common.Version, "message": "已向该节点登记更新请求；节点更新助手将在下次轮询时领取"})
+}
+
+func authenticateAgentRequest(r *http.Request, cfgMgr *config.Manager) (string, bool) {
+	nodeID := strings.TrimSpace(r.Header.Get("X-Agent-Node-ID"))
+	token := strings.TrimSpace(r.Header.Get("X-Agent-Token"))
+	if nodeID == "" || token == "" || !cfgMgr.ValidateNodeToken(nodeID, token) {
+		return "", false
+	}
+	return nodeID, true
+}
+
+func (h *RouterHandler) handleAgentUpdateCheck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	nodeID, ok := authenticateAgentRequest(r, h.cfgMgr)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	state, pending := h.cfgMgr.PendingAgentUpdate(nodeID)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"pending": pending,
+		"version": state.RequestedVersion,
+	})
+}
+
+func (h *RouterHandler) handleAgentUpdateStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	nodeID, ok := authenticateAgentRequest(r, h.cfgMgr)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var req struct {
+		Status  string `json:"status"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req); err != nil {
+		http.Error(w, "Invalid body", http.StatusBadRequest)
+		return
+	}
+	if len(req.Message) > 256 {
+		req.Message = req.Message[:256]
+	}
+	if err := h.cfgMgr.UpdateAgentUpdateState(nodeID, req.Status, req.Message); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
 // handleAdminTestTG 发送 TG 测试消息
 func (h *RouterHandler) handleAdminTestTG(w http.ResponseWriter, r *http.Request) {
 	cfg := h.cfgMgr.GetConfig()
@@ -639,6 +730,8 @@ case $ARCH in
     ;;
 esac
 
+UPDATER_BIN_NAME="${BIN_NAME/aegis_agent/aegis_agent_updater}"
+
 AGENT_DIR="/opt/aegis-probe/agent"
 mkdir -p "$AGENT_DIR"
 
@@ -671,6 +764,74 @@ else
   exit 1
 fi
 chmod +x "${AGENT_DIR}/aegis_agent"
+
+install_update_helper() {
+  if [ "$INIT_SYS" != "systemd" ] && [ "$INIT_SYS" != "openrc" ]; then
+    echo "ℹ️ 自动更新助手暂不支持 ${INIT_SYS}，Agent 仍可正常运行。"
+    return 0
+  fi
+  local helper_url="https://github.com/${REPO}/releases/latest/download/${UPDATER_BIN_NAME}"
+  local helper_tmp="${AGENT_DIR}/aegis_agent_updater.new"
+  if ! curl -fL --retry 2 --connect-timeout 8 -m 90 "$helper_url" -o "$helper_tmp"; then
+    echo "❌ 更新助手下载失败；Agent 已安装，但自动更新功能未启用。"
+    return 0
+  fi
+  if [ "$INIT_SYS" = "systemd" ]; then
+    systemctl stop aegis-agent-updater 2>/dev/null || true
+  else
+    rc-service aegis-agent-updater stop 2>/dev/null || true
+  fi
+  mv -f "$helper_tmp" "${AGENT_DIR}/aegis_agent_updater"
+  chmod 755 "${AGENT_DIR}/aegis_agent_updater"
+  json_escape() {
+    local value="$1"
+    value=${value//\\/\\\\}
+    value=${value//\"/\\\"}
+    value=${value//$'\n'/}
+    value=${value//$'\r'/}
+    printf '%%s' "$value"
+  }
+  printf '{"server_url":"%%s","node_id":"%%s","token":"%%s","agent_path":"%%s","updater_path":"%%s","service_manager":"%%s"}\n' \
+    "$(json_escape "$SERVER_URL")" "$(json_escape "$NODE_ID")" "$(json_escape "$TOKEN")" \
+    "${AGENT_DIR}/aegis_agent" "${AGENT_DIR}/aegis_agent_updater" "$INIT_SYS" > "${AGENT_DIR}/update.json"
+  chmod 600 "${AGENT_DIR}/update.json"
+  if [ "$INIT_SYS" = "systemd" ]; then
+    cat <<EOF > /etc/systemd/system/aegis-agent-updater.service
+[Unit]
+Description=TianQue Aegis Probe Agent Update Helper
+After=network-online.target aegis-agent.service
+Wants=network-online.target
+[Service]
+Type=simple
+ExecStart=${AGENT_DIR}/aegis_agent_updater -config=${AGENT_DIR}/update.json
+Restart=always
+RestartSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=${AGENT_DIR}
+[Install]
+WantedBy=multi-user.target
+EOF
+    systemctl daemon-reload
+    systemctl enable aegis-agent-updater
+    systemctl restart aegis-agent-updater
+  else
+    cat <<EOF > /etc/init.d/aegis-agent-updater
+#!/sbin/openrc-run
+description="TianQue Aegis Probe Agent Update Helper"
+command="${AGENT_DIR}/aegis_agent_updater"
+command_args="-config=${AGENT_DIR}/update.json"
+command_background="yes"
+pidfile="/run/aegis-agent-updater.pid"
+depend() { need net; after aegis-agent firewall; }
+EOF
+    chmod +x /etc/init.d/aegis-agent-updater
+    rc-update add aegis-agent-updater default 2>/dev/null || true
+    rc-service aegis-agent-updater restart || /etc/init.d/aegis-agent-updater restart
+  fi
+}
 
 # 根据系统自启环境分别配置
 if [ "$INIT_SYS" = "systemd" ]; then
@@ -748,6 +909,8 @@ else
   nohup ${AGENT_DIR}/aegis_agent -server=${SERVER_URL} -id=${NODE_ID} -token=${TOKEN} >/dev/null 2>&1 &
   echo "✅ 天阙·神盾探针已在后台运行！"
 fi
+
+install_update_helper
 
 echo "🛡️ 数据正在单向安全汇报至: ${SERVER_URL} (内存占用 < 4MB，零入站监听)"
 `, serverURL)

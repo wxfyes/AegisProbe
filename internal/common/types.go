@@ -3,7 +3,7 @@ package common
 import "strings"
 
 // Version 定义天阙·神盾安全探针全局统一版本号
-const Version = "v1.2.8"
+const Version = "v1.2.9"
 
 // MetricsData 定义受控端 Agent 采集到的原始指标
 type MetricsData struct {
@@ -96,20 +96,30 @@ func InferRenewalPeriod(price string) string {
 
 // ServerConfig 服务端全局配置模型
 type ServerConfig struct {
-	ListenPort       int                `json:"listen_port"`        // 监听端口，默认 8989
-	AdminPassword    string             `json:"admin_password"`     // 管理员密码
-	AccessMode       string             `json:"access_mode"`        // 大屏访问模式: "public" (公开) 或 "private" (密码锁屏)
-	SiteTitle        string             `json:"site_title"`         // 大屏站点标题
-	TGEnabled        bool               `json:"tg_enabled"`         // 是否启用 Telegram 通知
-	TGBotToken       string             `json:"tg_bot_token"`       // Telegram Bot Token
-	TGChatID         string             `json:"tg_chat_id"`         // Telegram 目标 Chat ID
-	TGProxy          string             `json:"tg_proxy"`           // Telegram Socks5 / HTTP 代理 (如 socks5://127.0.0.1:10808)
-	OfflineSec       int                `json:"offline_sec"`        // 判定掉线超时阈值 (秒)，默认 60
-	WarnDays         []int              `json:"warn_days"`          // 到期提醒阶梯天数，默认 [7, 3, 1, 0]
-	GFWCheckURL      string             `json:"gfw_check_url"`      // 外部测活 API URL 模板 (支持 {ip} 和 {port} 占位符)
-	GFWCheckInterval int                `json:"gfw_check_interval"` // 测活轮询间隔 (秒)，默认 180
-	RouteQuality     RouteQualityConfig `json:"route_quality"`
-	Nodes            []NodeConfig       `json:"nodes"` // 节点列表
+	ListenPort       int                         `json:"listen_port"`        // 监听端口，默认 8989
+	AdminPassword    string                      `json:"admin_password"`     // 管理员密码
+	AccessMode       string                      `json:"access_mode"`        // 大屏访问模式: "public" (公开) 或 "private" (密码锁屏)
+	SiteTitle        string                      `json:"site_title"`         // 大屏站点标题
+	TGEnabled        bool                        `json:"tg_enabled"`         // 是否启用 Telegram 通知
+	TGBotToken       string                      `json:"tg_bot_token"`       // Telegram Bot Token
+	TGChatID         string                      `json:"tg_chat_id"`         // Telegram 目标 Chat ID
+	TGProxy          string                      `json:"tg_proxy"`           // Telegram Socks5 / HTTP 代理 (如 socks5://127.0.0.1:10808)
+	OfflineSec       int                         `json:"offline_sec"`        // 判定掉线超时阈值 (秒)，默认 60
+	WarnDays         []int                       `json:"warn_days"`          // 到期提醒阶梯天数，默认 [7, 3, 1, 0]
+	GFWCheckURL      string                      `json:"gfw_check_url"`      // 外部测活 API URL 模板 (支持 {ip} 和 {port} 占位符)
+	GFWCheckInterval int                         `json:"gfw_check_interval"` // 测活轮询间隔 (秒)，默认 180
+	RouteQuality     RouteQualityConfig          `json:"route_quality"`
+	Nodes            []NodeConfig                `json:"nodes"` // 节点列表
+	AgentUpdates     map[string]AgentUpdateState `json:"agent_updates,omitempty"`
+}
+
+// AgentUpdateState is a one-node, explicitly requested update job.
+type AgentUpdateState struct {
+	RequestedVersion string `json:"requested_version,omitempty"`
+	RequestedAt      string `json:"requested_at,omitempty"`
+	Status           string `json:"status,omitempty"` // pending, downloading, installing, success, error
+	Message          string `json:"message,omitempty"`
+	UpdatedAt        string `json:"updated_at,omitempty"`
 }
 
 // RouteQualityConfig configures ICMP measurements from mainland China carrier probes.

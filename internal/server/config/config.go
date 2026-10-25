@@ -304,6 +304,68 @@ func (m *Manager) GetNode(id string) (*common.NodeConfig, bool) {
 	return nil, false
 }
 
+func (m *Manager) RequestAgentUpdate(id, version string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	found := false
+	for _, n := range m.cfg.Nodes {
+		if n.ID == id {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("节点不存在")
+	}
+	if current, ok := m.cfg.AgentUpdates[id]; ok && (current.Status == "pending" || current.Status == "downloading" || current.Status == "verifying" || current.Status == "installing") {
+		return fmt.Errorf("该节点已有更新请求正在处理")
+	}
+	if m.cfg.AgentUpdates == nil {
+		m.cfg.AgentUpdates = make(map[string]common.AgentUpdateState)
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	m.cfg.AgentUpdates[id] = common.AgentUpdateState{
+		RequestedVersion: version,
+		RequestedAt:      now,
+		UpdatedAt:        now,
+		Status:           "pending",
+		Message:          "等待节点更新助手领取",
+	}
+	return m.saveLocked()
+}
+
+func (m *Manager) AgentUpdateState(id string) common.AgentUpdateState {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.cfg.AgentUpdates[id]
+}
+
+func (m *Manager) UpdateAgentUpdateState(id, status, message string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	state, ok := m.cfg.AgentUpdates[id]
+	if !ok {
+		return nil
+	}
+	switch status {
+	case "downloading", "verifying", "installing", "success", "error":
+	default:
+		return fmt.Errorf("更新状态无效")
+	}
+	state.Status = status
+	state.Message = message
+	state.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	m.cfg.AgentUpdates[id] = state
+	return m.saveLocked()
+}
+
+func (m *Manager) PendingAgentUpdate(id string) (common.AgentUpdateState, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	state, ok := m.cfg.AgentUpdates[id]
+	return state, ok && (state.Status == "pending" || state.Status == "downloading" || state.Status == "verifying" || state.Status == "installing")
+}
+
 func (m *Manager) UpsertNode(node common.NodeConfig) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -438,6 +500,7 @@ func (m *Manager) DeleteNode(id string) error {
 		}
 	}
 	m.cfg.Nodes = newNodes
+	delete(m.cfg.AgentUpdates, id)
 	return m.saveLocked()
 }
 

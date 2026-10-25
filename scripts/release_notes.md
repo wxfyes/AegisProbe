@@ -1,3 +1,11 @@
+## v1.2.9 Agent 签名更新
+- GitHub Actions 在发布时构建各架构 Agent 与本地更新助手，并使用 OIDC/Sigstore 无长期私钥签名更新清单。
+- 管理后台可逐节点登记更新请求；Agent 更新助手只安装通过签名身份与 SHA-256 校验的官方 Agent，并重启固定服务。
+- 首次升级仍需逐节点运行一次后台一键安装命令，以安装本地更新助手；后续可在后台逐台触发。
+- 更新助手当前支持 Linux systemd 与 OpenRC；Windows 与 OpenWrt/procd 暂不支持自动更新。
+
+---
+
 ## 🛡️ 天阙·神盾安全探针 (AegisProbe) v1.2.7
 
 ### 🐛 v1.2.7 三网详情交互修复

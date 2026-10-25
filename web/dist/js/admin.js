@@ -146,6 +146,15 @@
   function renewalPeriodLabel(period) {
     return ({ month: '每月', quarter: '每季度', half_year: '每半年', year: '每年' })[period] || '每月';
   }
+
+  function compareSemver(left, right) {
+    const parse = value => String(value || '').replace(/^v/, '').split('.').map(n => Number.parseInt(n, 10) || 0);
+    const a = parse(left), b = parse(right);
+    for (let i = 0; i < 3; i++) {
+      if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) - (b[i] || 0);
+    }
+    return 0;
+  }
   // 6. 加载配置与节点列表
   async function loadAdminConfig() {
     try {
@@ -318,6 +327,28 @@
         }
       }
 
+      const updateState = n.update || {};
+      const updateLabels = {
+        pending: '等待节点领取', downloading: '正在下载', verifying: '正在验签',
+        installing: '正在安装', success: `已更新 ${updateState.requested_version || ''}`,
+        error: `更新失败：${updateState.message || '未知错误'}`
+      };
+      const updateStatusHtml = updateState.status
+        ? `<div title="${escapeHtml(updateState.updated_at || '')}" style="margin-top:4px;font-size:11px;color:${updateState.status === 'error' ? '#dc2626' : (updateState.status === 'success' ? '#059669' : '#d97706')};">${escapeHtml(updateLabels[updateState.status] || updateState.status)}</div>`
+        : '';
+      let updateButton;
+      if (!n.is_online) {
+        updateButton = `<button class="btn-sm" disabled title="节点离线时不能领取更新">升级 Agent</button>`;
+      } else if (/openwrt/i.test(n.real_os || n.os || '')) {
+        updateButton = `<button class="btn-sm" disabled title="当前更新助手暂不支持 OpenWrt/procd">手动更新</button>`;
+      } else if (compareSemver(n.version, 'v1.2.9') < 0) {
+        updateButton = `<button class="btn-sm" onclick="window.showInstallCmd('${escapeHtml(n.id)}')" title="首次升级需运行一次安装命令，以部署本地签名更新助手">更新并安装助手</button>`;
+      } else if (compareSemver(n.version, masterVer) < 0) {
+        updateButton = `<button class="btn-sm" onclick="window.requestAgentUpdate('${escapeHtml(n.id)}')" title="只请求此节点从 GitHub 获取并校验正式 Agent 更新">升级 Agent</button>`;
+      } else {
+        updateButton = `<button class="btn-sm" disabled title="Agent 已是最新版本">已是最新</button>`;
+      }
+
       return `
         <tr draggable="true" data-id="${escapeHtml(n.id)}">
           <td style="text-align: center; width: 44px;">
@@ -331,7 +362,7 @@
             </div>
           </td>
           <td>${ipHtml}</td>
-          <td>${verHtml}</td>
+          <td>${verHtml}${updateStatusHtml}</td>
           <td>
             <span class="node-os-badge">${escapeHtml(n.real_os || n.os || 'Linux')}</span>
           </td>
@@ -345,6 +376,7 @@
           </td>
           <td style="text-align: right;">
             <div style="display: inline-flex; gap: 6px;">
+              ${updateButton}
               <button class="btn-sm" onclick="window.showInstallCmd('${escapeHtml(n.id)}')">一键命令</button>
               <button class="btn-sm" onclick="window.editNode('${escapeHtml(n.id)}')">编辑</button>
               <button class="btn-sm danger" onclick="window.deleteNode('${escapeHtml(n.id)}')">删除</button>
@@ -817,6 +849,28 @@
   };
 
   // 10. 一键安装命令生成与复制
+  window.requestAgentUpdate = async function (id) {
+    const node = allNodes.find(item => item.id === id);
+    if (!node || !node.is_online) {
+      showToast('节点离线，无法领取更新', 'error');
+      return;
+    }
+    if (!confirm(`仅向节点 ${id} 登记 Agent ${currentConfig.master_version} 更新请求。节点本地更新助手会从 GitHub 校验签名后安装。继续？`)) return;
+    try {
+      const res = await fetch('/api/admin/agent/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ node_id: id })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '更新请求失败');
+      showToast(`已向 ${id} 登记更新请求；等待该节点助手轮询`, 'success');
+      await loadAdminConfig();
+    } catch (err) {
+      showToast(`更新请求失败：${err.message || err}`, 'error');
+    }
+  };
+
   window.showInstallCmd = async function (id) {
     try {
       const res = await fetch(`/api/admin/agent_install_cmd?id=${encodeURIComponent(id)}`);
@@ -920,4 +974,9 @@
   // 初始化加载与事件绑定
   initDragAndDrop();
   loadAdminConfig();
+  setInterval(() => {
+    if (allNodes.some(n => ['pending', 'downloading', 'verifying', 'installing'].includes((n.update || {}).status))) {
+      loadAdminConfig();
+    }
+  }, 10000);
 })();

@@ -8,7 +8,16 @@
 ![Security](https://img.shields.io/badge/Security-Pure%20Push--Only-brightgreen)
 ![GPU Load](https://img.shields.io/badge/GPU%20Load-0%25%20(No%20WebGL)-success)
 
-**专为高敏感节点集群打造的下一代轻量化、零 GPU 负担、零下行渗透通道、物理级 IP 脱敏的自研服务器探针系统**
+**轻量化服务器探针系统，支持 GitHub Actions 签名发布和逐节点 Agent 更新。**
+
+## Agent 签名更新
+
+- 首次接入需在管理员后台逐台运行「一键命令」，安装本地更新助手；此后可在后台逐台登记更新请求。
+- 更新助手只轮询固定更新状态，从 GitHub Release 下载 Agent；验证 GitHub Actions 的 Sigstore 身份、签名清单和 SHA-256 后，才替换 Agent 并重启固定服务。
+- GitHub Actions 使用 OIDC 临时身份签名，无需在本地保存发布私钥。
+- 主控不能下发 Shell、脚本或任意命令。若 GitHub 仓库、发布工作流或 Sigstore 信任链被攻破，仍可能产生恶意更新风险。
+
+---
 
 **v1.2.7 新增**：三网详情改为点击打开的居中弹窗，完整显示三家运营商的实时结果与 24 小时曲线；探针上报刷新卡片时弹窗不再随卡片跳动。**v1.2.6** 增加动态公网 IP 每 5 分钟主动刷新、Globalping 额度预检、ICMP 包数限制、可选线路告警，以及更清晰的三网趋势图。
 
@@ -51,23 +60,23 @@
 |                       |                    +------------------------+
 | 仅读取系统 /proc 状态 |                                ▲
 |                       |                                |
-| 物理单向 POST 推送数据 --------------------------------+
-| (无入站端口/无监听/无RPC)        [纯单向汇报，代码层面 100% 无任何命令执行模块]
+| 单向 POST 推送指标 ------------------------------------+
+| 无入站监听；root 更新助手只轮询固定状态并验签安装 Agent |
 +-----------------------+                                ▲
                                                          |
-                                 🛡️ 即使主控遭遇极端入侵，黑客拿到的也仅是一堆
-                                    脱敏的负载数字，在网络与协议上绝对无法逆向触碰节点！
+                         仅接受本仓库 GitHub Actions 签名的 Agent Release
 ```
 
-* **铁律 1：绝对物理级单向推送（Pure Push-Only）**
+* **安全边界 1：Agent 无入站监听，指标仍为单向上报**
   - 受控端（Agent）**零端口监听**，不开放任何公网/内网入站端口，彻底隐匿于网络扫描之外；
-  - 服务端与协议中，**彻底不定义、不实现、不预留任何反向控制、WebSSH、脚本下发代码**。
+  - 独立更新助手只向主控查询固定更新状态；协议没有命令、脚本或通用任务字段。
+  - 更新助手仅安装通过 GitHub Actions Sigstore 身份及签名清单哈希验证的 Agent，并且只重启固定 Agent 服务。
 * **铁律 2：真实 IP 物理级脱敏（盲盒式防护）**
   - 前端大屏及公开 API 仅输出节点别名、国旗图标、系统图标、硬件规格与实时负载；
   - 服务端向外返回的接口中**物理级剔除 IP、MAC 地址、私网拓扑等敏感元数据**，爬虫与黑客无法测绘节点。
-* **铁律 3：Agent 最小特权原则（强制非 Root 运行）**
+* **安全边界 3：指标 Agent 使用最小权限**
   - 读取 Linux 系统负载（`/proc/stat`、`/proc/meminfo`、`/proc/net/dev`、`/proc/loadavg`）完全无需 Root 特权；
-  - 安装脚本默认创建受限普通用户 `nobody:nogroup`，并配置 systemd 沙箱（`NoNewPrivileges=true`, `ProtectSystem=strict`）。
+  - 指标 Agent 以受限用户 `nobody:nogroup` 运行。独立 root 更新助手只写 Agent 安装目录，并重启固定的 `aegis-agent` 服务。
 * **铁律 4：纯 Go 单一静态二进制构建（零外部动态依赖）**
   - 采用 `CGO_ENABLED=0` 纯静态交叉编译，零外部动态链接库依赖；
   - 前端大屏与后台页面通过 Go 1.16+ `go:embed` 全部内嵌至单个二进制中，开箱即用。
@@ -283,8 +292,8 @@ Linux 核心设计中，读取 <code>/proc/stat</code>、<code>/proc/meminfo</co
 </details>
 
 <details>
-<summary><b>Q2: 控制端如果被黑客攻破，受控节点是否安全？</b></summary>
-绝对安全。在网络层面上，Agent 零端口监听，防火墙仅允许外出 HTTP POST；在代码层面上，服务端和 Agent 100% 没有任何远程执行、脚本下发或 WebSSH 代码。攻击者即使拿到服务端的完整权限，也无法向任何受控机器逆向发送任何命令。
+<summary><b>Q2: 主控被攻破后，攻击者能否控制 Agent？</b></summary>
+主控没有远程 Shell、脚本下发或任意命令接口。主控最多为指定节点登记一个更新请求；节点上的 root 更新助手只接受固定官方 GitHub Release，并验证 Sigstore 签名身份、清单和 Agent 哈希后再安装。仓库、GitHub Actions 发布工作流或 Sigstore 信任链遭到攻破，仍可能带来恶意更新风险。
 </details>
 
 <details>
