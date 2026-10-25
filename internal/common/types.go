@@ -3,7 +3,7 @@ package common
 import "strings"
 
 // Version 定义天阙·神盾安全探针全局统一版本号
-const Version = "v1.2.4"
+const Version = "v1.2.5"
 
 // MetricsData 定义受控端 Agent 采集到的原始指标
 type MetricsData struct {
@@ -138,6 +138,14 @@ type CarrierQuality struct {
 	Network    string  `json:"network,omitempty"`
 	CheckedAt  string  `json:"checked_at,omitempty"`
 	Message    string  `json:"message,omitempty"`
+}
+
+// RouteQualityHistoryPoint stores one timestamped carrier measurement for 24-hour trends.
+type RouteQualityHistoryPoint struct {
+	CheckedAt string  `json:"checked_at"`
+	LatencyMS float64 `json:"latency_ms,omitempty"`
+	LossPct   float64 `json:"loss_pct"`
+	Status    string  `json:"status"`
 }
 
 // OverviewSummary 大屏看板顶部的全盘聚合数据模型

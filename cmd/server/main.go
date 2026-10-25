@@ -54,6 +54,7 @@ func main() {
 
 	// 2. 初始化核心组件
 	st := store.NewStore()
+	st.SetRouteQualityHistoryPath(filepath.Join(filepath.Dir(*configPath), "route_quality_history.json"))
 	authMgr := auth.NewAuthManager()
 	notifier := notify.NewNotifier()
 	notifier.UpdateConfig(cfg.TGEnabled, cfg.TGBotToken, cfg.TGChatID, cfg.TGProxy)

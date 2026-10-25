@@ -10,7 +10,7 @@
 
 **专为高敏感节点集群打造的下一代轻量化、零 GPU 负担、零下行渗透通道、物理级 IP 脱敏的自研服务器探针系统**
 
-**v1.2.4 修复**：修正 Globalping 对 IP 目标的参数校验问题，三网 ICMP 测量请求不再因 `ipVersion` 被拒绝。v1.2.3 新增主控可通过 Globalping 或自定义 HTTPS JSON 接口检测国内三网对各 Agent 公网 IP 的 ICMP 延迟与丢包率；检测频率、探针数和额度可在管理员后台调整。
+**v1.2.5 新增**：三网 ICMP 弹窗增加最近 24 小时延迟与丢包趋势图，历史采样保存在主控 `data/route_quality_history.json`，重启后保留。v1.2.4 修复 Globalping 对 IP 目标的参数校验问题；v1.2.3 新增主控通过 Globalping 或自定义 HTTPS JSON 接口检测国内三网 ICMP 延迟与丢包率，并支持在管理员后台调整频率、探针数和额度。
 
 [白皮书文档](WHITEPAPER.md) • [快速安装](#-快速上手与部署) • [后台配置](#-管理后台与权限体系) • [Telegram 告警](#-telegram-智能告警中枢) • [安全白盒](#-四大安全铁律)
 

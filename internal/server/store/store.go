@@ -1,8 +1,12 @@
 package store
 
 import (
+	"encoding/json"
 	"fmt"
+	"log"
 	"math"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -29,18 +33,46 @@ type EventListener interface {
 }
 
 type Store struct {
-	mu           sync.RWMutex
-	states       map[string]*NodeState
-	routeQuality map[string]map[string]common.CarrierQuality
-	listeners    []EventListener
+	mu               sync.RWMutex
+	states           map[string]*NodeState
+	routeQuality     map[string]map[string]common.CarrierQuality
+	routeHistory     map[string]map[string][]common.RouteQualityHistoryPoint
+	routeHistoryPath string
+	listeners        []EventListener
 }
 
 func NewStore() *Store {
 	return &Store{
 		states:       make(map[string]*NodeState),
 		routeQuality: make(map[string]map[string]common.CarrierQuality),
+		routeHistory: make(map[string]map[string][]common.RouteQualityHistoryPoint),
 		listeners:    make([]EventListener, 0),
 	}
+}
+
+// SetRouteQualityHistoryPath loads and persists the rolling 24-hour route history.
+func (s *Store) SetRouteQualityHistoryPath(path string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.routeHistoryPath = path
+	if path == "" {
+		return
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("读取三网质量历史失败: %v", err)
+		}
+		return
+	}
+	if err := json.Unmarshal(data, &s.routeHistory); err != nil {
+		log.Printf("解析三网质量历史失败: %v", err)
+		s.routeHistory = make(map[string]map[string][]common.RouteQualityHistoryPoint)
+	}
+	if s.routeHistory == nil {
+		s.routeHistory = make(map[string]map[string][]common.RouteQualityHistoryPoint)
+	}
+	s.pruneRouteHistoryLocked(time.Now())
 }
 
 // UpdateRouteQuality stores one cached carrier measurement without touching agent heartbeat state.
@@ -51,6 +83,75 @@ func (s *Store) UpdateRouteQuality(nodeID string, quality common.CarrierQuality)
 		s.routeQuality[nodeID] = make(map[string]common.CarrierQuality)
 	}
 	s.routeQuality[nodeID][quality.Carrier] = quality
+	if s.routeHistory[nodeID] == nil {
+		s.routeHistory[nodeID] = make(map[string][]common.RouteQualityHistoryPoint)
+	}
+	s.routeHistory[nodeID][quality.Carrier] = append(s.routeHistory[nodeID][quality.Carrier], common.RouteQualityHistoryPoint{
+		CheckedAt: quality.CheckedAt,
+		LatencyMS: quality.LatencyMS,
+		LossPct:   quality.LossPct,
+		Status:    quality.Status,
+	})
+	s.pruneRouteHistoryLocked(time.Now())
+	s.persistRouteHistoryLocked()
+}
+
+// GetRouteQualityHistory returns cloned samples from the last 24 hours by carrier.
+func (s *Store) GetRouteQualityHistory(nodeID string) map[string][]common.RouteQualityHistoryPoint {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	result := make(map[string][]common.RouteQualityHistoryPoint, 3)
+	for carrier, points := range s.routeHistory[nodeID] {
+		result[carrier] = append([]common.RouteQualityHistoryPoint(nil), points...)
+	}
+	return result
+}
+
+func (s *Store) pruneRouteHistoryLocked(now time.Time) {
+	cutoff := now.Add(-24 * time.Hour)
+	for nodeID, carriers := range s.routeHistory {
+		for carrier, points := range carriers {
+			kept := points[:0]
+			for _, point := range points {
+				checked, err := time.Parse(time.RFC3339, point.CheckedAt)
+				if err == nil && !checked.Before(cutoff) && !checked.After(now.Add(time.Minute)) {
+					kept = append(kept, point)
+				}
+			}
+			if len(kept) == 0 {
+				delete(carriers, carrier)
+			} else {
+				carriers[carrier] = kept
+			}
+		}
+		if len(carriers) == 0 {
+			delete(s.routeHistory, nodeID)
+		}
+	}
+}
+
+func (s *Store) persistRouteHistoryLocked() {
+	if s.routeHistoryPath == "" {
+		return
+	}
+	data, err := json.Marshal(s.routeHistory)
+	if err != nil {
+		log.Printf("序列化三网质量历史失败: %v", err)
+		return
+	}
+	if err = os.MkdirAll(filepath.Dir(s.routeHistoryPath), 0755); err != nil {
+		log.Printf("创建三网质量历史目录失败: %v", err)
+		return
+	}
+	tmp := s.routeHistoryPath + ".tmp"
+	if err = os.WriteFile(tmp, data, 0600); err != nil {
+		log.Printf("写入三网质量历史失败: %v", err)
+		return
+	}
+	if err = os.Rename(tmp, s.routeHistoryPath); err != nil {
+		_ = os.Remove(tmp)
+		log.Printf("保存三网质量历史失败: %v", err)
+	}
 }
 
 func (s *Store) GetRouteQuality(nodeID string) []common.CarrierQuality {

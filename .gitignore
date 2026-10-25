@@ -3,6 +3,7 @@
 
 # 运行时数据与配置文件
 data/config.json
+data/route_quality_history.json
 data/*.tmp
 *.log
 

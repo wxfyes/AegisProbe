@@ -50,6 +50,7 @@ func (h *RouterHandler) RegisterRoutes(mux *http.ServeMux) {
 
 	// 大屏脱敏数据接口 (双模访问保护)
 	mux.HandleFunc("/api/nodes/summary", h.handleNodesSummary)
+	mux.HandleFunc("/api/nodes/route-quality/history", h.handleNodeRouteQualityHistory)
 
 	// 密码解锁与登录接口 (防暴力破解)
 	mux.HandleFunc("/api/auth/unlock", h.handleUnlock)
@@ -179,6 +180,33 @@ func (h *RouterHandler) handleNodesSummary(w http.ResponseWriter, r *http.Reques
 	summary := h.store.GetSummary(cfg.SiteTitle, cfg.Nodes, cfg.OfflineSec)
 	summary.RouteQualityEnabled = cfg.RouteQuality.Enabled
 	writeJSON(w, http.StatusOK, summary)
+}
+
+func (h *RouterHandler) handleNodeRouteQualityHistory(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	cfg := h.cfgMgr.GetConfig()
+	if cfg.AccessMode == "private" {
+		token := auth.ExtractTokenFromRequest(r)
+		if !h.authMgr.ValidateSession(token) {
+			writeJSON(w, http.StatusUnauthorized, map[string]interface{}{"error": "需要密码解锁访问"})
+			return
+		}
+	}
+	nodeID := strings.TrimSpace(r.URL.Query().Get("node_id"))
+	if nodeID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "缺少 node_id"})
+		return
+	}
+	for _, node := range cfg.Nodes {
+		if node.ID == nodeID {
+			writeJSON(w, http.StatusOK, map[string]interface{}{"node_id": nodeID, "history": h.store.GetRouteQualityHistory(nodeID)})
+			return
+		}
+	}
+	http.NotFound(w, r)
 }
 
 // handleUnlock 处理大屏私密锁屏解锁 (密码通用管理员密码)
