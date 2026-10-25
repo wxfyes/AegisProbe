@@ -384,7 +384,23 @@ body {
 .node-card:focus-within { outline: 2px solid rgba(37, 99, 235, 0.28); outline-offset: 2px; }
 
 .node-card.offline {
-  opacity: 0.65;
+  opacity: 0.88;
+}
+
+.node-card.offline::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(248, 113, 113, 0.2) 0,
+    rgba(248, 113, 113, 0.2) 9px,
+    transparent 9px,
+    transparent 23px
+  );
+  pointer-events: none;
 }
 
 .node-card.offline::before {
@@ -399,6 +415,7 @@ body {
   padding: 2px 7px;
   border-radius: 6px;
   font-weight: 700;
+  z-index: 2;
 }
 [data-theme="dark"] .node-card.offline::before {
   background: rgba(239, 68, 68, 0.2);

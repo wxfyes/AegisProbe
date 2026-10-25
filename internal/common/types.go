@@ -3,7 +3,7 @@ package common
 import "strings"
 
 // Version 定义天阙·神盾安全探针全局统一版本号
-const Version = "v1.3.3"
+const Version = "v1.3.4"
 
 // MetricsData 定义受控端 Agent 采集到的原始指标
 type MetricsData struct {

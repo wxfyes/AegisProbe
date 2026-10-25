@@ -578,9 +578,12 @@
       });
     });
     if (activeRouteQualityNode === nodeID) {
-      document.querySelectorAll('#routeQualityModal .rq-history').forEach(container => {
-        container.innerHTML = routeQualityHistoryChart(histories[container.dataset.carrier] || []);
-      });
+      const node = cachedData?.nodes?.find(item => item.id === nodeID);
+      const results = document.querySelector('#routeQualityModal .rq-modal-results');
+      if (node && results) {
+        const rows = Array.isArray(node.route_quality) ? node.route_quality : [];
+        results.innerHTML = routeQualityDetails(rows, histories);
+      }
     }
   }
 
