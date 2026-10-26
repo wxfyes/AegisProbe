@@ -204,10 +204,12 @@
         dayClass = 'yellow';
       }
 
-      const cpuPct = isOnline ? node.status.cpu_pct : 0;
-      const ramPct = isOnline ? node.status.ram_pct : 0;
-      const diskPct = isOnline ? node.status.disk_pct : 0;
-      const swapPct = (!node.status.swap_off && isOnline) ? node.status.swap_pct : 0;
+      const cpuPct = Number(node.status.cpu_pct) || 0;
+      const ramPct = Number(node.status.ram_pct) || 0;
+      const diskPct = Number(node.status.disk_pct) || 0;
+      const swapPct = !node.status.swap_off ? (Number(node.status.swap_pct) || 0) : 0;
+      const uptimeLabel = isOnline ? '在线时长' : '最后在线';
+      const uptimeText = isOnline ? node.status.uptime_str : formatLastSeen(node.status.last_seen_at);
       const healthClass = (value, warnAt, dangerAt) => value >= dangerAt ? 'health-danger' : value >= warnAt ? 'health-warn' : 'health-good';
       const boundedPct = value => Math.max(0, Math.min(100, Number(value) || 0));
 
@@ -283,8 +285,8 @@
               <span class="val val-cycle">${node.billing.expire_date || '--'}</span>
             </div>
             <div class="detail-row">
-              <span class="label">在线时长</span>
-              <span class="val val-uptime">${node.status.uptime_str}</span>
+              <span class="label val-uptime-label">${uptimeLabel}</span>
+              <span class="val val-uptime" title="${escapeHtml(node.status.last_seen_at || '')}">${uptimeText}</span>
             </div>
           </div>
         `;
@@ -378,7 +380,12 @@
         const valCycle = card.querySelector('.val-cycle');
         if (valCycle) valCycle.textContent = node.billing.expire_date || '--';
         const valUptime = card.querySelector('.val-uptime');
-        if (valUptime) valUptime.textContent = node.status.uptime_str;
+        const uptimeLabelEl = card.querySelector('.val-uptime-label');
+        if (uptimeLabelEl) uptimeLabelEl.textContent = uptimeLabel;
+        if (valUptime) {
+          valUptime.textContent = uptimeText;
+          valUptime.title = node.status.last_seen_at || '';
+        }
       }
     });
   }
@@ -692,6 +699,13 @@
     const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
     const i = Math.floor(Math.log(b) / Math.log(k));
     return parseFloat((b / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  }
+
+  function formatLastSeen(value) {
+    if (!value) return '从未上线';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '时间未知';
+    return date.toLocaleString([], { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false });
   }
 
   function formatSpeed(b) {

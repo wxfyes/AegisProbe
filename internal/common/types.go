@@ -3,7 +3,7 @@ package common
 import "strings"
 
 // Version 定义天阙·神盾安全探针全局统一版本号
-const Version = "v1.3.4"
+const Version = "v1.3.5"
 
 // MetricsData 定义受控端 Agent 采集到的原始指标
 type MetricsData struct {
@@ -204,6 +204,7 @@ type NodeStatusView struct {
 	LoadStr        string  `json:"load_str"`         // 负载字符串 (如 "0.00 | 0.01 | 0.00")
 	UptimeStr      string  `json:"uptime_str"`       // 在线时长 (如 "在线: 6天13小时")
 	LastSeenSec    int64   `json:"last_seen_sec"`    // 距离上次上报的秒数
+	LastSeenAt     string  `json:"last_seen_at"`     // 最后一次 Agent 上报时间 (RFC3339)
 }
 
 // NodeCardView 大屏单节点卡片视图模型 (物理级剔除 IP、MAC、私网地址)

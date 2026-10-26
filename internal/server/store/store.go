@@ -35,10 +35,17 @@ type EventListener interface {
 type Store struct {
 	mu               sync.RWMutex
 	states           map[string]*NodeState
+	nodeStatePath    string
+	nodeStateDirty   bool
 	routeQuality     map[string]map[string]common.CarrierQuality
 	routeHistory     map[string]map[string][]common.RouteQualityHistoryPoint
 	routeHistoryPath string
 	listeners        []EventListener
+}
+
+type persistedNodeState struct {
+	LastSeen time.Time          `json:"last_seen"`
+	Metrics  common.MetricsData `json:"metrics"`
 }
 
 func NewStore() *Store {
@@ -48,6 +55,80 @@ func NewStore() *Store {
 		routeHistory: make(map[string]map[string][]common.RouteQualityHistoryPoint),
 		listeners:    make([]EventListener, 0),
 	}
+}
+
+// SetNodeStatePath restores the latest Agent snapshots and configures their durable cache.
+func (s *Store) SetNodeStatePath(path string, offlineSec int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.nodeStatePath = path
+	if path == "" {
+		return
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("读取节点状态快照失败: %v", err)
+		}
+		return
+	}
+	var saved map[string]persistedNodeState
+	if err := json.Unmarshal(data, &saved); err != nil {
+		log.Printf("解析节点状态快照失败: %v", err)
+		return
+	}
+	if offlineSec <= 0 {
+		offlineSec = 60
+	}
+	for nodeID, snapshot := range saved {
+		if strings.TrimSpace(nodeID) == "" || snapshot.LastSeen.IsZero() {
+			continue
+		}
+		wasOnline := time.Since(snapshot.LastSeen) <= time.Duration(offlineSec)*time.Second
+		consecutiveHits := 0
+		if wasOnline {
+			consecutiveHits = 2
+		}
+		s.states[nodeID] = &NodeState{
+			NodeID:          nodeID,
+			LastSeen:        snapshot.LastSeen,
+			LatestMetrics:   snapshot.Metrics,
+			ConsecutiveHits: consecutiveHits,
+			WasOnline:       wasOnline,
+			IPv4:            snapshot.Metrics.IPv4,
+			IPv6:            snapshot.Metrics.IPv6,
+		}
+	}
+}
+
+// SaveNodeStates writes dirty last-report snapshots at a low frequency, not on every heartbeat.
+func (s *Store) SaveNodeStates() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.nodeStatePath == "" || !s.nodeStateDirty {
+		return nil
+	}
+	snapshots := make(map[string]persistedNodeState, len(s.states))
+	for nodeID, state := range s.states {
+		snapshots[nodeID] = persistedNodeState{LastSeen: state.LastSeen, Metrics: state.LatestMetrics}
+	}
+	data, err := json.Marshal(snapshots)
+	if err != nil {
+		return fmt.Errorf("序列化节点状态快照失败: %w", err)
+	}
+	if err = os.MkdirAll(filepath.Dir(s.nodeStatePath), 0755); err != nil {
+		return fmt.Errorf("创建节点状态目录失败: %w", err)
+	}
+	tmp := s.nodeStatePath + ".tmp"
+	if err = os.WriteFile(tmp, data, 0600); err != nil {
+		return fmt.Errorf("写入节点状态快照失败: %w", err)
+	}
+	if err = os.Rename(tmp, s.nodeStatePath); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("保存节点状态快照失败: %w", err)
+	}
+	s.nodeStateDirty = false
+	return nil
 }
 
 // SetRouteQualityHistoryPath loads and persists the rolling 24-hour route history.
@@ -218,6 +299,7 @@ func (s *Store) UpdateReport(nodeID string, metrics common.MetricsData) {
 	}
 
 	st.LatestMetrics = metrics
+	s.nodeStateDirty = true
 }
 
 // UpdateGFWStatus 更新节点国内测活状态
@@ -340,9 +422,9 @@ func (s *Store) GetSummary(siteTitle string, nodes []common.NodeConfig, offlineS
 
 		if hasState {
 			lastSeenSec = int64(now.Sub(st.LastSeen).Seconds())
+			m = st.LatestMetrics
 			if now.Sub(st.LastSeen) <= timeoutDur {
 				isOnline = true
-				m = st.LatestMetrics
 			}
 		}
 
@@ -385,6 +467,11 @@ func (s *Store) GetSummary(siteTitle string, nodes []common.NodeConfig, offlineS
 
 		// 格式化在线时长
 		uptimeStr := formatUptime(m.UptimeSeconds)
+		speedUpStr, speedDownStr := "--", "--"
+		if isOnline {
+			speedUpStr = formatSpeed(m.NetOutSpeed)
+			speedDownStr = formatSpeed(m.NetInSpeed)
+		}
 
 		// 优先使用 Agent 真实采集上报的发行版系统，杜绝写死配置错误
 		finalOS := strings.ToLower(strings.TrimSpace(m.OS))
@@ -439,8 +526,8 @@ func (s *Store) GetSummary(siteTitle string, nodes []common.NodeConfig, offlineS
 				SwapPct:        swapPct,
 				SwapOff:        swapOff,
 				DiskPct:        diskPct,
-				SpeedUpStr:     formatSpeed(m.NetOutSpeed),
-				SpeedDownStr:   formatSpeed(m.NetInSpeed),
+				SpeedUpStr:     speedUpStr,
+				SpeedDownStr:   speedDownStr,
 				TCPConnections: m.TCPConnections,
 				UDPSockets:     m.UDPSockets,
 				TrafficUpStr:   formatBytes(m.NetOutTotal),
@@ -448,6 +535,7 @@ func (s *Store) GetSummary(siteTitle string, nodes []common.NodeConfig, offlineS
 				LoadStr:        loadStr,
 				UptimeStr:      uptimeStr,
 				LastSeenSec:    lastSeenSec,
+				LastSeenAt:     lastSeenAt(st, hasState),
 			},
 			GFWStatus: func() string {
 				if hasState && isOnline {
@@ -559,4 +647,11 @@ func formatUptime(seconds uint64) string {
 		return fmt.Sprintf("在线: %d小时%d分", hours, mins)
 	}
 	return fmt.Sprintf("在线: %d分钟", mins)
+}
+
+func lastSeenAt(state *NodeState, exists bool) string {
+	if !exists || state == nil {
+		return ""
+	}
+	return state.LastSeen.Format(time.RFC3339)
 }

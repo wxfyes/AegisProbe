@@ -56,6 +56,7 @@ func main() {
 	// 2. 初始化核心组件
 	st := store.NewStore()
 	st.SetRouteQualityHistoryPath(filepath.Join(filepath.Dir(*configPath), "route_quality_history.json"))
+	st.SetNodeStatePath(filepath.Join(filepath.Dir(*configPath), "node_state.json"), cfg.OfflineSec)
 	authMgr := auth.NewAuthManager()
 	notifier := notify.NewNotifier()
 	notifier.UpdateConfig(cfg.TGEnabled, cfg.TGBotToken, cfg.TGChatID, cfg.TGProxy)
@@ -88,6 +89,9 @@ func main() {
 				currentCfg := cfgMgr.GetConfig()
 				threshold := time.Duration(currentCfg.OfflineSec) * time.Second
 				st.CheckHeartbeats(currentCfg.Nodes, threshold)
+				if err := st.SaveNodeStates(); err != nil {
+					log.Printf("保存节点状态快照失败: %v", err)
+				}
 				onlineNodes := st.GetOnlineNodeIDs(currentCfg.Nodes, threshold)
 				renewals, err := cfgMgr.RenewExpiredOnlineNodes(onlineNodes, time.Now())
 				if err != nil {
@@ -148,6 +152,9 @@ func main() {
 
 	<-ctx.Done()
 	log.Printf("正在安全关闭探针主控服务...")
+	if err := st.SaveNodeStates(); err != nil {
+		log.Printf("保存节点状态快照失败: %v", err)
+	}
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = server.Shutdown(shutdownCtx)

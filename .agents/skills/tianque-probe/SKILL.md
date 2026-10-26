@@ -10,6 +10,7 @@ Read this before making code, deployment, or release changes. The repository is 
 ## Current project model
 
 - The Go master embeds the web UI from `internal/server/web/dist`. When editing files under `web/dist`, keep the embedded copy in sync.
+- The master persists each node's latest report snapshot in `node_state.json` beside its config, atomically refreshed every 10 seconds with mode `0600`; restored snapshots are display-only until that Agent reports again. Offline cards show the last snapshot and report time, while offline nodes remain excluded from live aggregate speed and traffic.
 - Agents report metrics to the master. The project deliberately has no remote shell, arbitrary command, or script execution channel.
 - Agent automatic updates are separate from metric reporting. On supported Linux hosts, a privileged local updater polls a fixed master endpoint, checks a requested release, verifies the Sigstore bundle and signed manifest against the pinned GitHub Actions identity, checks the Agent SHA-256, replaces only the fixed Agent binary, and restarts only its fixed service.
 - Admin-triggered Agent updates are per-node requests. Once the updater is installed, the operator can trigger a node from the master UI without SSH. This is not a general-purpose remote command system.
