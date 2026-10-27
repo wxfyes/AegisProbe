@@ -210,6 +210,7 @@
       const swapPct = !node.status.swap_off ? (Number(node.status.swap_pct) || 0) : 0;
       const uptimeLabel = isOnline ? '在线时长' : '最后在线';
       const uptimeText = isOnline ? node.status.uptime_str : formatLastSeen(node.status.last_seen_at);
+      const speedTitle = isOnline ? '当前实时网速' : '最后一次上报网速';
       const healthClass = (value, warnAt, dangerAt) => value >= dangerAt ? 'health-danger' : value >= warnAt ? 'health-warn' : 'health-good';
       const boundedPct = value => Math.max(0, Math.min(100, Number(value) || 0));
 
@@ -265,7 +266,7 @@
           <div class="card-details">
             <div class="detail-row detail-network">
               <span class="label">网络</span>
-              <span class="speed-text"><span class="speed-reading-up">↑ <span class="val-speed-up">${node.status.speed_up_str}</span></span><span class="speed-reading-down">↓ <span class="val-speed-down">${node.status.speed_down_str}</span></span></span>
+              <span class="speed-text" title="${speedTitle}"><span class="speed-reading-up">↑ <span class="val-speed-up">${node.status.speed_up_str}</span></span><span class="speed-reading-down">↓ <span class="val-speed-down">${node.status.speed_down_str}</span></span></span>
             </div>
             ${routeQualityRowHtml(node, routeQualityEnabled)}
             <div class="detail-row detail-connections" title="TCP 为已建立连接数；UDP 为绑定套接字数">
@@ -363,6 +364,8 @@
         if (speedUp) speedUp.textContent = node.status.speed_up_str;
         const speedDown = card.querySelector('.val-speed-down');
         if (speedDown) speedDown.textContent = node.status.speed_down_str;
+        const speedText = card.querySelector('.speed-text');
+        if (speedText) speedText.title = speedTitle;
 		const tcpConnections = card.querySelector('.val-tcp-connections');
 		if (tcpConnections) tcpConnections.textContent = node.status.tcp_connections || 0;
 		const udpSockets = card.querySelector('.val-udp-sockets');

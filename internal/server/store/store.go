@@ -467,11 +467,8 @@ func (s *Store) GetSummary(siteTitle string, nodes []common.NodeConfig, offlineS
 
 		// 格式化在线时长
 		uptimeStr := formatUptime(m.UptimeSeconds)
-		speedUpStr, speedDownStr := "--", "--"
-		if isOnline {
-			speedUpStr = formatSpeed(m.NetOutSpeed)
-			speedDownStr = formatSpeed(m.NetInSpeed)
-		}
+		speedUpStr := formatSpeed(m.NetOutSpeed)
+		speedDownStr := formatSpeed(m.NetInSpeed)
 
 		// 优先使用 Agent 真实采集上报的发行版系统，杜绝写死配置错误
 		finalOS := strings.ToLower(strings.TrimSpace(m.OS))
