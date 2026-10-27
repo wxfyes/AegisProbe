@@ -109,9 +109,10 @@
 
   // 5. 渲染顶部与多维分组
   function renderAll(data) {
-    if (data.siteTitle) {
-      dom.siteTitle.textContent = data.siteTitle;
-      document.title = data.siteTitle;
+    const siteTitle = data.site_title || data.siteTitle;
+    if (siteTitle) {
+      dom.siteTitle.textContent = siteTitle;
+      document.title = siteTitle;
     }
 
     // 顶部看板
