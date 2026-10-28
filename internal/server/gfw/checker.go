@@ -3,7 +3,6 @@ package gfw
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -98,6 +97,7 @@ func (c *Checker) checkAll() {
 }
 
 var reBracedNum = regexp.MustCompile(`\{(\d+)\}`)
+var rePingLatency = regexp.MustCompile(`(?i)^\s*\d+(?:\.\d+)?\s*(?:ms|毫秒)?\s*$`)
 
 func (c *Checker) probeNode(nodeID string, ip string, port int, templateURL string) {
 	// 容错处理：若用户手写了类似 {80} 或 {22}，自动移除大括号纠正为数字
@@ -144,50 +144,56 @@ func (c *Checker) probeNode(nodeID string, ip string, port int, templateURL stri
 	}
 }
 
-// parseAPIResult 通用智能解析外部 API 探测结果 (支持 xxapi、自建 tcping 等各类格式)
+// parseAPIResult 只在响应明确表示 TCP 端口连通时返回 true。
+// API 的 code=200 通常只表示 API 请求成功，不能用来判断目标端口开放。
 func parseAPIResult(body []byte) bool {
 	var raw map[string]interface{}
 	if err := json.Unmarshal(body, &raw); err != nil {
-		// 非 json，如包含成功则判为畅通
-		content := strings.ToLower(string(body))
-		return strings.Contains(content, "ok") || strings.Contains(content, "success") || strings.Contains(content, "true")
+		// 非结构化响应无法可靠区分 API 成功与 TCP 探测成功，按未确认处理。
+		return false
 	}
 
-	// 1. 匹配 code 字段
-	if codeVal, exists := raw["code"]; exists {
-		switch v := codeVal.(type) {
-		case float64:
-			if int(v) == 200 || int(v) == 0 {
-				return true
-			}
-			return false
-		case string:
-			if v == "200" || v == "0" || strings.ToLower(v) == "success" {
-				return true
-			}
-			return false
-		}
-	}
-
-	// 2. 匹配 success / status 字段
-	if successVal, exists := raw["success"]; exists {
-		if b, ok := successVal.(bool); ok && b {
-			return true
-		}
-	}
-	if statusVal, exists := raw["status"]; exists {
-		s := fmt.Sprintf("%v", statusVal)
-		if strings.ToLower(s) == "ok" || strings.ToLower(s) == "success" {
-			return true
-		}
-	}
-
-	// 3. 匹配 data 内部是否有 ping
+	// xxapi 的 code=200 / msg=数据请求成功只代表 API 调用成功；
+	// 只有 data.ping 返回有效延迟值，才代表 TCP 建连成功。
 	if dataVal, exists := raw["data"]; exists {
 		if dataMap, ok := dataVal.(map[string]interface{}); ok {
-			if _, hasPing := dataMap["ping"]; hasPing {
-				return true
+			if ping, hasPing := dataMap["ping"]; hasPing {
+				if latency, ok := ping.(string); ok && rePingLatency.MatchString(latency) {
+					return true
+				}
+				if latency, ok := ping.(float64); ok && latency >= 0 {
+					return true
+				}
+				return false
 			}
+			for _, key := range []string{"tcp_open", "port_open", "connected", "open"} {
+				if value, exists := dataMap[key]; exists {
+					if result, ok := value.(bool); ok {
+						return result
+					}
+				}
+			}
+			if status, ok := dataMap["status"].(string); ok {
+				switch strings.ToLower(strings.TrimSpace(status)) {
+				case "open", "connected", "reachable":
+					return true
+				}
+			}
+		}
+	}
+
+	// 自建探测接口可用明确的 TCP 状态字段；不要把通用 success/code 当作端口结果。
+	for _, key := range []string{"tcp_open", "port_open", "connected"} {
+		if value, exists := raw[key]; exists {
+			if result, ok := value.(bool); ok {
+				return result
+			}
+		}
+	}
+	if status, ok := raw["status"].(string); ok {
+		switch strings.ToLower(strings.TrimSpace(status)) {
+		case "open", "connected", "reachable":
+			return true
 		}
 	}
 
