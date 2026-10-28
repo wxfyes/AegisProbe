@@ -68,6 +68,7 @@ func (h *RouterHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/admin/agent/update", h.adminRequireAuth(h.handleAdminAgentUpdate))
 	mux.HandleFunc("/api/admin/test_tg", h.adminRequireAuth(h.handleAdminTestTG))
 	mux.HandleFunc("/api/admin/gfw/trigger", h.adminRequireAuth(h.handleAdminGFWTrigger))
+	mux.HandleFunc("/api/admin/gfw/config", h.adminRequireAuth(h.handleAdminGFWConfig))
 	mux.HandleFunc("/api/admin/route-quality/trigger", h.adminRequireAuth(h.handleAdminRouteQualityTrigger))
 	mux.HandleFunc("/api/admin/route-quality/status", h.adminRequireAuth(h.handleAdminRouteQualityStatus))
 	mux.HandleFunc("/api/admin/backup/export", h.adminRequireAuth(h.handleAdminBackupExport))
@@ -667,6 +668,35 @@ func (h *RouterHandler) handleAdminGFWTrigger(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ok":  true,
 		"msg": "已触发全部节点国内连通性测活，正在后台并发巡检，结果将秒级同步至大屏！",
+	})
+}
+
+func (h *RouterHandler) handleAdminGFWConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		URL         string `json:"url"`
+		IntervalSec int    `json:"interval_sec"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请求内容无效"})
+		return
+	}
+	if req.IntervalSec <= 0 {
+		req.IntervalSec = 14400
+	}
+	if err := h.cfgMgr.UpdateGFWSettings(req.URL, req.IntervalSec); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if h.gfwChecker != nil && strings.TrimSpace(req.URL) != "" {
+		h.gfwChecker.TriggerCheckNow()
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"ok":                 true,
+		"gfw_check_interval": req.IntervalSec,
 	})
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -202,6 +203,9 @@ func (m *Manager) GetConfig() common.ServerConfig {
 func (m *Manager) UpdateSettings(title, password, accessMode string, port, offlineSec int, tgEnabled bool, tgToken, tgChatID, tgProxy string, gfwURL string, gfwInterval int, route common.RouteQualityConfig) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if err := validateGFWCheckURL(gfwURL); err != nil {
+		return err
+	}
 	if route.Provider != "globalping" && route.Provider != "custom" {
 		return fmt.Errorf("三网质量接口类型无效")
 	}
@@ -277,6 +281,39 @@ func (m *Manager) UpdateSettings(title, password, accessMode string, port, offli
 	m.cfg.RouteQuality = route
 
 	return m.saveLocked()
+}
+
+func (m *Manager) UpdateGFWSettings(gfwURL string, intervalSec int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := validateGFWCheckURL(gfwURL); err != nil {
+		return err
+	}
+	if intervalSec < 60 || intervalSec > 86400 {
+		return fmt.Errorf("端口测活间隔必须在 60 至 86400 秒之间")
+	}
+	m.cfg.GFWCheckURL = strings.TrimSpace(gfwURL)
+	m.cfg.GFWCheckInterval = intervalSec
+	return m.saveLocked()
+}
+
+func validateGFWCheckURL(raw string) error {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	if !strings.Contains(raw, "{ip}") || !strings.Contains(raw, "{port}") {
+		return fmt.Errorf("测活 URL 必须同时包含 {ip} 和 {port}；自建探针请使用 /tcping?address={ip}&port={port}，不要用只测 ICMP 的 /ping")
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return fmt.Errorf("测活 URL 格式无效，必须是完整的 http 或 https 地址")
+	}
+	path := strings.TrimRight(strings.ToLower(u.Path), "/")
+	if strings.HasSuffix(path, "/ping") && !strings.HasSuffix(path, "/tcping") {
+		return fmt.Errorf("当前 URL 指向 /ping（ICMP）；请改用自建探针的 /tcping 接口并带上 {port}")
+	}
+	return nil
 }
 
 func (m *Manager) ValidateNodeToken(nodeID, token string) bool {

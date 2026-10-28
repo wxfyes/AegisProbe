@@ -46,6 +46,7 @@
     cfgGFWCheckInterval: document.getElementById('cfgGFWCheckInterval'),
     cfgGFWCustomIntervalGroup: document.getElementById('cfgGFWCustomIntervalGroup'),
     btnTriggerGFW: document.getElementById('btnTriggerGFW'),
+    btnSaveGFWConfig: document.getElementById('btnSaveGFWConfig'),
     btnFillDefaultGFW: document.getElementById('btnFillDefaultGFW'),
     cfgRouteEnabled: document.getElementById('cfgRouteEnabled'),
     cfgRouteProvider: document.getElementById('cfgRouteProvider'),
@@ -626,6 +627,34 @@
         : (parseInt(dom.cfgGFWCheckInterval.value, 10) || 14400);
       updateGFWBadge(dom.cfgGFWCheckURL.value.trim(), interval);
       showToast('✨ 已填入官方标准测活模板，请点击【保存系统配置】！', 'success');
+    });
+  }
+
+  if (dom.btnSaveGFWConfig) {
+    dom.btnSaveGFWConfig.addEventListener('click', async () => {
+      const url = dom.cfgGFWCheckURL ? dom.cfgGFWCheckURL.value.trim() : '';
+      const intervalSec = dom.cfgGFWCheckIntervalSelect && dom.cfgGFWCheckIntervalSelect.value !== 'custom'
+        ? parseInt(dom.cfgGFWCheckIntervalSelect.value, 10)
+        : (parseInt(dom.cfgGFWCheckInterval.value, 10) || 14400);
+      dom.btnSaveGFWConfig.disabled = true;
+      try {
+        const res = await fetch('/api/admin/gfw/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url, interval_sec: intervalSec })
+        });
+        const data = await res.json();
+        if (res.ok && data.ok) {
+          showToast('✅ 端口测活设置已单独保存，可立即触发检测。', 'success');
+          updateGFWBadge(url, intervalSec);
+        } else {
+          alert('❌ 端口测活设置未保存：' + (data.error || '未知错误'));
+        }
+      } catch (err) {
+        alert('❌ 保存端口测活设置失败，请检查网络连接。');
+      } finally {
+        dom.btnSaveGFWConfig.disabled = false;
+      }
     });
   }
 
