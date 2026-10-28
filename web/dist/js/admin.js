@@ -7,6 +7,8 @@
 
   let currentConfig = null;
   let allNodes = [];
+  let configLoadGeneration = 0;
+  const dirtySettings = new Set();
 
   const dom = {
     loginModal: document.getElementById('loginModal'),
@@ -158,6 +160,7 @@
   }
   // 6. 加载配置与节点列表
   async function loadAdminConfig() {
+    const generation = ++configLoadGeneration;
     try {
       const res = await fetch('/api/admin/config');
       if (res.status === 401) {
@@ -168,14 +171,25 @@
       if (!res.ok) return;
 
       const data = await res.json();
+      // Ignore older responses that arrive after a newer refresh/save.
+      if (generation !== configLoadGeneration) return;
       currentConfig = data;
       allNodes = data.nodes || [];
-      renderSettings(data);
+      // Never let an in-flight refresh replace values the operator is editing.
+      if (dirtySettings.size === 0) renderSettings(data);
       renderNodesTable(allNodes);
     } catch (err) {
       console.error('加载后台配置失败:', err);
     }
   }
+
+  // Preserve edits while the initial config request or a background refresh is in flight.
+  dom.settingsForm.addEventListener('input', (event) => {
+    if (event.target.matches('input, select, textarea')) dirtySettings.add(event.target);
+  });
+  dom.settingsForm.addEventListener('change', (event) => {
+    if (event.target.matches('input, select, textarea')) dirtySettings.add(event.target);
+  });
 
   function updateGFWBadge(url, intervalSec) {
     if (!dom.gfwStatusBadge) return;
@@ -515,6 +529,7 @@
       const data = await res.json();
       if (res.ok && data.ok) {
         showToast('✅ 系统配置已成功保存！', 'success');
+        dirtySettings.clear();
         loadAdminConfig();
       } else {
         alert('❌ 保存失败: ' + (data.error || '未知错误'));
@@ -622,6 +637,7 @@
   if (dom.btnFillDefaultGFW && dom.cfgGFWCheckURL) {
     dom.btnFillDefaultGFW.addEventListener('click', () => {
       dom.cfgGFWCheckURL.value = 'https://v2.xxapi.cn/api/tcping?address={ip}&port={port}';
+      dirtySettings.add(dom.cfgGFWCheckURL);
       const interval = (dom.cfgGFWCheckIntervalSelect && dom.cfgGFWCheckIntervalSelect.value !== 'custom')
         ? parseInt(dom.cfgGFWCheckIntervalSelect.value, 10)
         : (parseInt(dom.cfgGFWCheckInterval.value, 10) || 14400);
@@ -647,6 +663,10 @@
         if (res.ok && data.ok) {
           showToast('✅ 端口测活设置已单独保存，可立即触发检测。', 'success');
           updateGFWBadge(url, intervalSec);
+          dirtySettings.delete(dom.cfgGFWCheckURL);
+          dirtySettings.delete(dom.cfgGFWCheckInterval);
+          dirtySettings.delete(dom.cfgGFWCheckIntervalSelect);
+          if (dirtySettings.size === 0) loadAdminConfig();
         } else {
           alert('❌ 端口测活设置未保存：' + (data.error || '未知错误'));
         }
